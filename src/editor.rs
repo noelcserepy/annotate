@@ -417,11 +417,15 @@ impl Editor {
     }
 
     fn toggle_style(&mut self, cx: &mut App) {
-        let style = cx.global::<AppState>().settings.style.toggled();
-        if let Some(i) = self.active() {
-            self.checkpoint();
-            self.doc.callouts[i].style = style;
-        }
+        let style = match self.active() {
+            Some(i) => {
+                self.checkpoint();
+                let c = &mut self.doc.callouts[i];
+                c.style = c.style.toggled();
+                c.style
+            }
+            None => cx.global::<AppState>().settings.style.toggled(),
+        };
         AppState::update_settings(cx, |s| s.style = style);
     }
 
