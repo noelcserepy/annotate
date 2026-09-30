@@ -243,25 +243,33 @@ impl Callout {
 
 /// How far out from its box each connector turns sideways, for those whose tip is too far to
 /// the side to reach at 45°. Connectors turning the same way nest: in `foot` order, each turns
-/// farther out than the one before, so no line crosses another. All turns fit in the gap
-/// between the boxes and the image, clear of other sides' boxes.
+/// nearer the image than the one before, counted from the box nearest the image so boxes
+/// dragged farther out still nest. All turns fit in the gap between the boxes and the image,
+/// clear of other sides' boxes.
 pub fn turns(callouts: &[Callout], d: &Dims) -> Vec<Option<f32>> {
-    let nest: Vec<Option<(Side, bool, f32)>> = callouts
+    let nest: Vec<Option<(Side, bool, f32, f32)>> = callouts
         .iter()
         .map(|c| {
             let (out, side) = c.reach();
             let sideways = c.style == Style::Elbow && side.abs() >= 0.5 && out.abs() - side.abs() < d.spacing;
             // Turning toward the start of the edge nests by foot; the other way, mirrored.
             let (t, h) = c.tip_along();
-            sideways.then(|| (c.side, side < 0., if side < 0. { t + h } else { h - t }))
+            let row = match c.side {
+                Side::Left => -c.anchor.x,
+                Side::Right => c.anchor.x,
+                Side::Top => -c.anchor.y,
+                Side::Bottom => c.anchor.y,
+            };
+            sideways.then(|| (c.side, side < 0., if side < 0. { t + h } else { h - t }, row))
         })
         .collect();
     nest.iter()
         .map(|n| {
-            let &(side, back, key) = n.as_ref()?;
-            let group = || nest.iter().flatten().filter(|&&(s, b, _)| s == side && b == back);
+            let &(side, back, key, row) = n.as_ref()?;
+            let group = || nest.iter().flatten().filter(|&&(s, b, _, _)| s == side && b == back);
             let step = d.spacing.min(d.gap / (group().count() + 1) as f32);
-            Some((group().filter(|&&(_, _, k)| k < key).count() + 1) as f32 * step)
+            let nearest = group().map(|g| g.3).fold(f32::MAX, f32::min);
+            Some(row - nearest + (group().filter(|g| g.2 < key).count() + 1) as f32 * step)
         })
         .collect()
 }
