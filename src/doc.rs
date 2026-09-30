@@ -197,14 +197,18 @@ impl Callout {
         if matches!(self.side, Side::Left | Side::Right) { (t.x - a.x, t.y - a.y) } else { (t.y - a.y, t.x - a.x) }
     }
 
-    /// Where along the image edge a 45° line into the tip, coming from the box's side of it,
-    /// meets the box row. A box level with its tip counts as after it, since boxes only get
-    /// pushed that way. Boxes in this order give connectors that don't cross.
-    fn foot(&self) -> f32 {
-        let (out, side) = self.reach();
+    /// The tip's position along the image edge, and its distance out from the box row.
+    fn tip_along(&self) -> (f32, f32) {
         let t = self.tip();
         let along = if matches!(self.side, Side::Left | Side::Right) { t.y } else { t.x };
-        if side <= 0. { along + out.abs() } else { along - out.abs() }
+        (along, self.reach().0.abs())
+    }
+
+    /// Where a 45° line into the tip from after it (the way boxes get pushed) meets the box
+    /// row. Boxes on a side line up in this order.
+    fn foot(&self) -> f32 {
+        let (t, h) = self.tip_along();
+        t + h
     }
 
     /// Connector polyline from anchor to tip. Elbow runs straight out of the box, then
@@ -242,7 +246,7 @@ pub fn turns(callouts: &[Callout], d: &Dims) -> Vec<Option<f32>> {
             let (out, side) = c.reach();
             let sideways = c.style == Style::Elbow && side.abs() >= 0.5 && out.abs() - side.abs() < d.spacing;
             // Turning toward the start of the edge nests by foot; the other way, mirrored.
-            sideways.then(|| (c.side, side < 0., if side < 0. { c.foot() } else { -c.foot() }))
+            sideways.then(|| (c.side, side < 0., if side < 0. { c.foot() } else { 2. * out.abs() - c.foot() }))
         })
         .collect();
     nest.iter()
@@ -284,9 +288,14 @@ pub fn place(target: &Target, image: (f32, f32), d: &Dims) -> (Side, P) {
     (side, anchor)
 }
 
-/// Push boxes apart along their side, so growing text never covers a neighbour. Boxes on
-/// one side line up in `foot` order, even after a drag, and only later ones move. Returns
-/// each callout's anchor after the push.
+/// Push boxes apart along their side, so growing text never covers a neighbour and
+/// connectors don't cross. Returns each callout's anchor after the push.
+///
+/// A connector sits, at each height above the box row, where its anchor clamps into the 45°
+/// cone below its tip. So with boxes in `foot` order, a box only has to clear the one before
+/// it, and the tip of any earlier connector that reaches its tip from before it with a cone
+/// edge ahead of this one's. Pushing a box later along the side satisfies both, and only
+/// later boxes move.
 pub fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
     let mut anchors: Vec<P> = callouts.iter().map(|c| c.anchor).collect();
     let mut placed: Vec<usize> = Vec::new();
@@ -294,20 +303,30 @@ pub fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
         let along_x = matches!(side, Side::Top | Side::Bottom);
         let mut order: Vec<usize> = (0..callouts.len()).filter(|&i| callouts[i].side == side).collect();
         order.sort_by(|&a, &b| callouts[a].foot().total_cmp(&callouts[b].foot()));
+        let along = |p: P| if along_x { p.x } else { p.y };
         let behind = |b: &R, p: &R| if along_x { b.x < p.right() + d.spacing } else { b.y < p.bottom() + d.spacing };
-        let mut prev: Option<usize> = None;
+        let mut done: Vec<usize> = Vec::new();
         for i in order {
+            let (t, h) = callouts[i].tip_along();
+            let clear = done
+                .iter()
+                .filter_map(|&j| {
+                    let (tj, hj) = callouts[j].tip_along();
+                    (along(anchors[j]) < tj && tj - hj > t - h).then(|| tj - hj + h.min(hj) + d.spacing)
+                })
+                .fold(f32::MIN, f32::max);
+            let mut push = (clear - along(anchors[i])).max(0.);
             loop {
-                let clash = placed.iter().copied().find(|&j| boxes[i].intersects(&boxes[j].inflate(d.spacing)));
-                let Some(j) = clash.or(prev.filter(|&p| behind(&boxes[i], &boxes[p]))) else { break };
-                let push = if along_x { boxes[j].right() + d.spacing - boxes[i].x } else { boxes[j].bottom() + d.spacing - boxes[i].y };
                 let shift = if along_x { P::new(push, 0.) } else { P::new(0., push) };
                 boxes[i].x += shift.x;
                 boxes[i].y += shift.y;
                 anchors[i] = P::new(anchors[i].x + shift.x, anchors[i].y + shift.y);
+                let clash = placed.iter().copied().find(|&j| boxes[i].intersects(&boxes[j].inflate(d.spacing)));
+                let Some(j) = clash.or(done.last().copied().filter(|&p| behind(&boxes[i], &boxes[p]))) else { break };
+                push = if along_x { boxes[j].right() + d.spacing - boxes[i].x } else { boxes[j].bottom() + d.spacing - boxes[i].y };
             }
             placed.push(i);
-            prev = Some(i);
+            done.push(i);
         }
     }
     anchors
