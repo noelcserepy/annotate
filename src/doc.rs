@@ -197,13 +197,14 @@ impl Callout {
         if matches!(self.side, Side::Left | Side::Right) { (t.x - a.x, t.y - a.y) } else { (t.y - a.y, t.x - a.x) }
     }
 
-    /// Where along the image edge a 45° line into the tip, coming from the side boxes get
-    /// pushed to, meets the box row. Boxes in this order give connectors that never cross.
+    /// Where along the image edge a 45° line into the tip, coming from the box's side of it,
+    /// meets the box row. A box level with its tip counts as after it, since boxes only get
+    /// pushed that way. Boxes in this order give connectors that don't cross.
     fn foot(&self) -> f32 {
-        let (out, _) = self.reach();
+        let (out, side) = self.reach();
         let t = self.tip();
         let along = if matches!(self.side, Side::Left | Side::Right) { t.y } else { t.x };
-        along + out.abs()
+        if side <= 0. { along + out.abs() } else { along - out.abs() }
     }
 
     /// Connector polyline from anchor to tip. Elbow runs straight out of the box, then
@@ -241,7 +242,7 @@ pub fn turns(callouts: &[Callout], d: &Dims) -> Vec<Option<f32>> {
             let (out, side) = c.reach();
             let sideways = c.style == Style::Elbow && side.abs() >= 0.5 && out.abs() - side.abs() < d.spacing;
             // Turning toward the start of the edge nests by foot; the other way, mirrored.
-            sideways.then(|| (c.side, side < 0., if side < 0. { c.foot() } else { 2. * out.abs() - c.foot() }))
+            sideways.then(|| (c.side, side < 0., if side < 0. { c.foot() } else { -c.foot() }))
         })
         .collect();
     nest.iter()

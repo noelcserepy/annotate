@@ -451,9 +451,9 @@ impl Editor {
         let fix = |i: usize| i - removed.is_some_and(|r| r < i) as usize;
         self.drag = match hit {
             Hit::Box(i) if removed != Some(i) => {
-                let i = fix(i);
+                // The frame still has the indices from before the commit.
                 let a = self.frame.anchors[i];
-                Drag::Box { index: i, start: p, grab: P::new(p.x - a.x, p.y - a.y), moved: false }
+                Drag::Box { index: fix(i), start: p, grab: P::new(p.x - a.x, p.y - a.y), moved: false }
             }
             Hit::Tip(i) if removed != Some(i) => {
                 self.checkpoint();
