@@ -246,7 +246,7 @@ impl Callout {
 /// nearer the image than the one before, counted from the box nearest the image so boxes
 /// dragged farther out still nest. All turns fit in the gap between the boxes and the image,
 /// clear of other sides' boxes.
-pub fn turns(callouts: &[Callout], d: &Dims) -> Vec<Option<f32>> {
+fn turns(callouts: &[Callout], d: &Dims) -> Vec<Option<f32>> {
     let nest: Vec<Option<(Side, bool, f32, f32)>> = callouts
         .iter()
         .map(|c| {
@@ -303,6 +303,18 @@ pub fn place(target: &Target, image: (f32, f32), d: &Dims) -> (Side, P) {
     (side, anchor)
 }
 
+/// Push boxes apart, then route each connector from its pushed anchor. Returns the anchors
+/// and connector paths.
+pub fn layout(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> (Vec<P>, Vec<Vec<P>>) {
+    let anchors = separate(callouts, boxes, d);
+    // A rect tip follows the anchor. Pin it where the callout's own anchor puts it, the tip
+    // `separate` ordered by, so a push doesn't move it.
+    let laid: Vec<Callout> =
+        callouts.iter().zip(&anchors).map(|(c, &anchor)| Callout { anchor, target: Target::Point(c.tip()), ..c.clone() }).collect();
+    let paths = laid.iter().zip(turns(&laid, d)).map(|(c, turn)| c.connector(turn)).collect();
+    (anchors, paths)
+}
+
 /// Push boxes apart along their side, so growing text never covers a neighbour and
 /// connectors don't cross. Returns each callout's anchor after the push.
 ///
@@ -311,7 +323,7 @@ pub fn place(target: &Target, image: (f32, f32), d: &Dims) -> (Side, P) {
 /// it, and the tip of any earlier connector that reaches its tip from before it with a cone
 /// edge ahead of this one's. Pushing a box later along the side satisfies both, and only
 /// later boxes move.
-pub fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
+fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
     let mut anchors: Vec<P> = callouts.iter().map(|c| c.anchor).collect();
     let mut placed: Vec<usize> = Vec::new();
     for side in [Side::Left, Side::Right, Side::Top, Side::Bottom] {

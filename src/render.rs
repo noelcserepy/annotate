@@ -8,7 +8,7 @@ use tiny_skia::{
     Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, Stroke, Transform,
 };
 
-use crate::doc::{Callout, Dims, Doc, P, R, Style, Target, separate, turns};
+use crate::doc::{Callout, Dims, Doc, P, R, Style, Target, layout};
 
 const INTER: &[u8] = include_bytes!("../assets/Inter-SemiBold.ttf");
 const RED: [u8; 3] = [0xDC, 0x26, 0x26];
@@ -99,12 +99,7 @@ pub fn compose(scene: Scene) -> Frame {
         };
         boxes.push(c.box_rect(size, d));
     }
-    let anchors = separate(&doc.callouts, &mut boxes, d);
-    // A rect tip follows the anchor. Pin it where the user's anchor put it, the tip `separate`
-    // ordered by, so a push doesn't move it.
-    let laid: Vec<Callout> =
-        doc.callouts.iter().zip(&anchors).map(|(c, &anchor)| Callout { anchor, target: Target::Point(c.tip()), ..c.clone() }).collect();
-    let paths: Vec<Vec<P>> = laid.iter().zip(turns(&laid, d)).map(|(c, turn)| c.connector(turn)).collect();
+    let (anchors, paths) = layout(&doc.callouts, &mut boxes, d);
 
     let image_rect = R::new(0., 0., image.width() as f32, image.height() as f32);
     let mut bounds = image_rect;
