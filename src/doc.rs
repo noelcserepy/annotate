@@ -197,15 +197,21 @@ impl Callout {
         if matches!(self.side, Side::Left | Side::Right) { (t.x - a.x, t.y - a.y) } else { (t.y - a.y, t.x - a.x) }
     }
 
-    /// The tip's position along the image edge, and its distance out from the box row.
+    /// The tip's position along the image edge, and how far in from the edge it sits. The
+    /// depth is off by a constant per side, so it compares tips whose boxes sit at different
+    /// distances out.
     fn tip_along(&self) -> (f32, f32) {
         let t = self.tip();
-        let along = if matches!(self.side, Side::Left | Side::Right) { t.y } else { t.x };
-        (along, self.reach().0.abs())
+        match self.side {
+            Side::Left => (t.y, t.x),
+            Side::Right => (t.y, -t.x),
+            Side::Top => (t.x, t.y),
+            Side::Bottom => (t.x, -t.y),
+        }
     }
 
-    /// Where a 45° line into the tip from after it (the way boxes get pushed) meets the box
-    /// row. Boxes on a side line up in this order.
+    /// Where a 45° line into the tip from after it (the way boxes get pushed) meets the image
+    /// edge. Boxes on a side line up in this order.
     fn foot(&self) -> f32 {
         let (t, h) = self.tip_along();
         t + h
@@ -246,7 +252,8 @@ pub fn turns(callouts: &[Callout], d: &Dims) -> Vec<Option<f32>> {
             let (out, side) = c.reach();
             let sideways = c.style == Style::Elbow && side.abs() >= 0.5 && out.abs() - side.abs() < d.spacing;
             // Turning toward the start of the edge nests by foot; the other way, mirrored.
-            sideways.then(|| (c.side, side < 0., if side < 0. { c.foot() } else { 2. * out.abs() - c.foot() }))
+            let (t, h) = c.tip_along();
+            sideways.then(|| (c.side, side < 0., if side < 0. { t + h } else { h - t }))
         })
         .collect();
     nest.iter()
