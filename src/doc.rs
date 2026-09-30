@@ -284,7 +284,8 @@ pub fn place(target: &Target, image: (f32, f32), d: &Dims) -> (Side, P) {
 }
 
 /// Push boxes apart along their side, so growing text never covers a neighbour. Boxes on
-/// one side line up in `foot` order, and only later ones move. Returns each callout's anchor after the push.
+/// one side line up in `foot` order, even after a drag, and only later ones move. Returns
+/// each callout's anchor after the push.
 pub fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
     let mut anchors: Vec<P> = callouts.iter().map(|c| c.anchor).collect();
     let mut placed: Vec<usize> = Vec::new();
@@ -292,8 +293,12 @@ pub fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
         let along_x = matches!(side, Side::Top | Side::Bottom);
         let mut order: Vec<usize> = (0..callouts.len()).filter(|&i| callouts[i].side == side).collect();
         order.sort_by(|&a, &b| callouts[a].foot().total_cmp(&callouts[b].foot()));
+        let behind = |b: &R, p: &R| if along_x { b.x < p.right() + d.spacing } else { b.y < p.bottom() + d.spacing };
+        let mut prev: Option<usize> = None;
         for i in order {
-            while let Some(&j) = placed.iter().find(|&&j| boxes[i].intersects(&boxes[j].inflate(d.spacing))) {
+            loop {
+                let clash = placed.iter().copied().find(|&j| boxes[i].intersects(&boxes[j].inflate(d.spacing)));
+                let Some(j) = clash.or(prev.filter(|&p| behind(&boxes[i], &boxes[p]))) else { break };
                 let push = if along_x { boxes[j].right() + d.spacing - boxes[i].x } else { boxes[j].bottom() + d.spacing - boxes[i].y };
                 let shift = if along_x { P::new(push, 0.) } else { P::new(0., push) };
                 boxes[i].x += shift.x;
@@ -301,6 +306,7 @@ pub fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
                 anchors[i] = P::new(anchors[i].x + shift.x, anchors[i].y + shift.y);
             }
             placed.push(i);
+            prev = Some(i);
         }
     }
     anchors

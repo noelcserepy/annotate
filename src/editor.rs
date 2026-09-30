@@ -28,7 +28,8 @@ const CLOSE: f32 = 18.;
 enum Mode {
     Idle,
     Selected(usize),
-    Editing(usize),
+    /// Typing into box `index`; `text` holds its cursor and selection.
+    Editing { index: usize, text: cosmic_text::Editor<'static> },
 }
 
 #[derive(Default)]
@@ -60,7 +61,6 @@ pub struct Editor {
     dims: Dims,
     undo: Vec<Doc>,
     mode: Mode,
-    text: Option<cosmic_text::Editor<'static>>,
     drag: Drag,
     frame: Frame,
     shown: Arc<RenderImage>,
@@ -72,7 +72,15 @@ pub struct Editor {
     focus: FocusHandle,
 }
 
+/// Open `capture` in an editor, or bring its editor forward if it has one. Two editors on
+/// one entry would each save over the other's work.
 pub fn open(capture: Capture, cx: &mut App) {
+    cx.activate(true);
+    let editors = cx.windows().into_iter().filter_map(|w| w.downcast::<Editor>());
+    if let Some(open) = editors.into_iter().find(|w| w.read(cx).is_ok_and(|e| e.id == capture.id)) {
+        open.update(cx, |_, window, _| window.activate_window()).ok();
+        return;
+    }
     let Capture { id, image, doc } = capture;
     let dims = Dims::new(doc.scale);
     let fill = render::edge_color(&image);
@@ -86,11 +94,16 @@ pub fn open(capture: Capture, cx: &mut App) {
         is_resizable: false,
         ..Default::default()
     };
-    cx.activate(true);
     let handle = cx.open_window(options, |window, cx| {
         cx.new(|cx| {
             let focus = cx.focus_handle();
             window.focus(&focus);
+            // Quitting drops windows without asking them to close.
+            cx.on_app_quit(|editor: &mut Editor, cx| {
+                editor.save(cx);
+                async {}
+            })
+            .detach();
             let shown = Arc::new(render::to_render_image(&frame.pixmap));
             Editor {
                 id,
@@ -100,7 +113,6 @@ pub fn open(capture: Capture, cx: &mut App) {
                 dims,
                 undo: Vec::new(),
                 mode: Mode::Idle,
-                text: None,
                 drag: Drag::None,
                 frame,
                 shown,
@@ -178,7 +190,23 @@ fn content_size(view: R, scale: f32, zoom: f32) -> (f32, f32) {
 impl Editor {
     fn editing(&self) -> Option<usize> {
         match self.mode {
-            Mode::Editing(i) => Some(i),
+            Mode::Editing { index, .. } => Some(index),
+            _ => None,
+        }
+    }
+
+    /// The box being edited or selected.
+    fn active(&self) -> Option<usize> {
+        match self.mode {
+            Mode::Selected(i) | Mode::Editing { index: i, .. } => Some(i),
+            Mode::Idle => None,
+        }
+    }
+
+    /// Text selected in the box being edited.
+    fn selection(&self) -> Option<String> {
+        match &self.mode {
+            Mode::Editing { text, .. } => text.copy_selection().filter(|s| !s.is_empty()),
             _ => None,
         }
     }
@@ -232,7 +260,6 @@ impl Editor {
     /// Stop editing. Empty callouts are removed; returns the removed index.
     fn commit(&mut self) -> Option<usize> {
         let i = self.editing()?;
-        self.text = None;
         self.mode = Mode::Idle;
         if self.doc.callouts[i].text.trim().is_empty() {
             self.doc.callouts.remove(i);
@@ -266,8 +293,7 @@ impl Editor {
             None => Action::Motion(Motion::BufferEnd),
         };
         editor.action(&mut text.fonts, action);
-        self.text = Some(editor);
-        self.mode = Mode::Editing(i);
+        self.mode = Mode::Editing { index: i, text: editor };
     }
 
     fn create(&mut self, target: Target, cx: &App) {
@@ -280,20 +306,21 @@ impl Editor {
     }
 
     fn edit(&mut self, f: impl FnOnce(&mut cosmic_text::Editor<'static>, &mut cosmic_text::FontSystem)) {
-        let (Some(i), Some(editor)) = (self.editing(), self.text.as_mut()) else { return };
+        let Mode::Editing { index, text: editor } = &mut self.mode else { return };
         let mut text = render::text();
         f(editor, &mut text.fonts);
         editor.shape_as_needed(&mut text.fonts, false);
-        self.doc.callouts[i].text = editor.with_buffer(render::buffer_text);
+        self.doc.callouts[*index].text = editor.with_buffer(render::buffer_text);
     }
 
     fn refresh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let editing = match (&self.mode, &mut self.text) {
-            (Mode::Editing(i), Some(editor)) => Some((*i, editor)),
-            _ => None,
-        };
+        let live = self.editing().is_some() || !matches!(self.drag, Drag::None);
         let selected = match self.mode {
             Mode::Selected(i) => Some(i),
+            _ => None,
+        };
+        let editing = match &mut self.mode {
+            Mode::Editing { index, text } => Some((*index, text)),
             _ => None,
         };
         let marquee = match self.drag {
@@ -306,7 +333,6 @@ impl Editor {
         let shown = Arc::new(render::to_render_image(&self.frame.pixmap));
         window.drop_image(std::mem::replace(&mut self.shown, shown)).ok();
 
-        let live = matches!(self.mode, Mode::Editing(_)) || !matches!(self.drag, Drag::None);
         let screen = window.display(cx).map(|d| d.bounds().size);
         let (view, zoom) = fit_view(self.frame.bounds, live.then_some(self.view), self.doc.scale, screen);
         if view != self.view || zoom != self.zoom {
@@ -385,7 +411,6 @@ impl Editor {
     fn undo(&mut self) {
         if let Some(doc) = self.undo.pop() {
             self.doc = doc;
-            self.text = None;
             self.mode = Mode::Idle;
             self.drag = Drag::None;
         }
@@ -393,7 +418,7 @@ impl Editor {
 
     fn toggle_style(&mut self, cx: &mut App) {
         let style = cx.global::<AppState>().settings.style.toggled();
-        if let Mode::Editing(i) | Mode::Selected(i) = self.mode {
+        if let Some(i) = self.active() {
             self.checkpoint();
             self.doc.callouts[i].style = style;
         }
@@ -509,8 +534,7 @@ impl Editor {
         if m.platform {
             match k.key.as_str() {
                 "c" => {
-                    let selection = self.text.as_ref().and_then(|e| e.copy_selection()).filter(|s| !s.is_empty());
-                    match selection {
+                    match self.selection() {
                         Some(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
                         None => self.copy_and_close(window, cx),
                     }
@@ -523,7 +547,7 @@ impl Editor {
                     e.action(fonts, Action::Motion(Motion::BufferEnd));
                 }),
                 "x" => {
-                    if let Some(text) = self.text.as_ref().and_then(|e| e.copy_selection()) {
+                    if let Some(text) = self.selection() {
                         cx.write_to_clipboard(ClipboardItem::new_string(text));
                         self.edit(|e, _| {
                             e.delete_selection();
@@ -544,14 +568,14 @@ impl Editor {
 
         match (k.key.as_str(), &self.mode) {
             ("tab", _) => self.toggle_style(cx),
-            ("escape", Mode::Editing(i)) => {
-                let i = *i;
+            ("escape", Mode::Editing { index, .. }) => {
+                let i = *index;
                 self.mode = if self.commit().is_some() { Mode::Idle } else { Mode::Selected(i) };
             }
             ("escape", Mode::Selected(_)) => self.mode = Mode::Idle,
             ("escape", Mode::Idle) => return self.close(window, cx),
             ("backspace" | "delete", Mode::Selected(i)) => self.delete(*i),
-            (_, Mode::Editing(_)) => self.type_key(event),
+            (_, Mode::Editing { .. }) => self.type_key(event),
             (_, Mode::Selected(i)) if k.key_char.is_some() && !m.control => {
                 let i = *i;
                 self.checkpoint();
@@ -630,10 +654,7 @@ impl Render for Editor {
         let (b, v) = (self.frame.bounds, self.view);
         let fill = Rgba { r: self.fill.red(), g: self.fill.green(), b: self.fill.blue(), a: 1. };
         let shown = self.shown.clone();
-        let active = match self.mode {
-            Mode::Selected(i) | Mode::Editing(i) => Some(i),
-            Mode::Idle => None,
-        };
+        let active = self.active();
         let deletable = [self.hover, active.filter(|i| Some(*i) != self.hover)];
         let white = Rgba { r: 1., g: 1., b: 1., a: 1. };
 
