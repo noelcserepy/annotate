@@ -1,45 +1,58 @@
-use tiny_skia::{FillRule, LineCap, Paint, PathBuilder, Pixmap, Stroke, Transform};
+use std::path::Path;
+
 use tray_icon::{
     Icon, TrayIcon, TrayIconBuilder,
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{self, IconMenuItem, Menu, MenuItem, PredefinedMenuItem},
 };
 
-use crate::Command;
+use crate::{Command, history};
+
+const RECENT: usize = 5;
 
 pub fn build() -> TrayIcon {
+    TrayIconBuilder::new().with_menu(Box::new(menu())).with_icon_templated(icon()).build().unwrap()
+}
+
+/// The menu lists recent snaps, so it has to be rebuilt whenever history changes.
+pub fn refresh(tray: &TrayIcon) {
+    tray.set_menu(Some(Box::new(menu())));
+}
+
+fn menu() -> Menu {
     let menu = Menu::new();
+    menu.append(&MenuItem::with_id(Command::Capture.id(), "Capture", true, None)).unwrap();
+    let recent: Vec<_> = history::list().into_iter().take(RECENT).collect();
+    if !recent.is_empty() {
+        menu.append(&PredefinedMenuItem::separator()).unwrap();
+    }
+    for entry in recent {
+        let label = entry.taken.format("%b %-d, %H:%M").to_string();
+        let item = IconMenuItem::with_id(Command::Open(entry.id).id(), label, true, thumbnail(&entry.thumb), None);
+        menu.append(&item).unwrap();
+    }
     menu.append_items(&[
-        &MenuItem::with_id(Command::Capture.id(), "Capture", true, None),
-        &MenuItem::with_id(Command::History.id(), "History", true, None),
-        &MenuItem::with_id(Command::Settings.id(), "Settings…", true, None),
         &PredefinedMenuItem::separator(),
+        &MenuItem::with_id(Command::Settings.id(), "Settings…", true, None),
         &MenuItem::with_id(Command::Quit.id(), "Quit", true, None),
     ])
     .unwrap();
-    TrayIconBuilder::new().with_menu(Box::new(menu)).with_icon_templated(icon()).build().unwrap()
+    menu
 }
 
-/// A text box with a connector running down to a dot: the app's one move, drawn as an
-/// 18pt template image at 2x.
+/// The latest render, letterboxed to a fixed size so the dates line up. macOS caps menu
+/// item icons at 18pt tall; this is 27×18pt at 2x.
+fn thumbnail(path: &Path) -> Option<menu::Icon> {
+    const W: u32 = 54;
+    const H: u32 = 36;
+    let image = image::open(path).ok()?.thumbnail(W, H).to_rgba8();
+    let mut canvas = image::RgbaImage::new(W, H);
+    let (x, y) = ((W - image.width()) / 2, (H - image.height()) / 2);
+    image::imageops::overlay(&mut canvas, &image, x.into(), y.into());
+    menu::Icon::from_rgba(canvas.into_raw(), W, H).ok()
+}
+
+/// The logo as an 18pt template image at 2x, rendered by build.rs.
 fn icon() -> Icon {
-    let mut pixmap = Pixmap::new(36, 36).unwrap();
-    let mut paint = Paint::default();
-    paint.set_color_rgba8(0, 0, 0, 255);
-    paint.anti_alias = true;
-
-    let mut pb = PathBuilder::new();
-    pb.push_rect(tiny_skia::Rect::from_xywh(14., 5., 19., 12.).unwrap());
-    pixmap.fill_path(&pb.finish().unwrap(), &paint, FillRule::Winding, Transform::identity(), None);
-
-    let mut pb = PathBuilder::new();
-    pb.move_to(20., 17.);
-    pb.line_to(20., 20.);
-    pb.line_to(10., 30.);
-    let stroke = Stroke { width: 2.5, line_cap: LineCap::Round, ..Default::default() };
-    pixmap.stroke_path(&pb.finish().unwrap(), &paint, &stroke, Transform::identity(), None);
-
-    let dot = PathBuilder::from_circle(9., 31., 3.).unwrap();
-    pixmap.fill_path(&dot, &paint, FillRule::Winding, Transform::identity(), None);
-
-    Icon::from_rgba(pixmap.take(), 36, 36).unwrap()
+    let rgba = include_bytes!(concat!(env!("OUT_DIR"), "/tray.rgba"));
+    Icon::from_rgba(rgba.to_vec(), 36, 36).unwrap()
 }

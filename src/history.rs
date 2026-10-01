@@ -8,6 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use chrono::{DateTime, Local};
 use tiny_skia::Pixmap;
 
 use crate::{doc::Doc, render};
@@ -20,6 +21,7 @@ pub struct Capture {
 
 pub struct Entry {
     pub id: String,
+    pub taken: DateTime<Local>,
     pub thumb: PathBuf,
 }
 
@@ -99,10 +101,6 @@ fn thumbs(dir: &PathBuf) -> Vec<PathBuf> {
         .collect()
 }
 
-pub fn delete(id: &str) {
-    fs::remove_dir_all(dir(id)).ok();
-}
-
 /// Newest first.
 pub fn list() -> Vec<Entry> {
     let mut entries: Vec<Entry> = fs::read_dir(root())
@@ -111,8 +109,10 @@ pub fn list() -> Vec<Entry> {
         .flatten()
         .filter_map(|e| {
             let id = e.file_name().to_string_lossy().into_owned();
+            // Ids are capture times in Unix millis.
+            let taken = DateTime::from_timestamp_millis(id.parse().ok()?)?.with_timezone(&Local);
             let thumb = thumbs(&e.path()).into_iter().max().unwrap_or_else(|| e.path().join("original.png"));
-            thumb.exists().then_some(Entry { id, thumb })
+            thumb.exists().then_some(Entry { id, taken, thumb })
         })
         .collect();
     entries.sort_by(|a, b| b.id.cmp(&a.id));
