@@ -6,8 +6,10 @@ cd "$(dirname "$0")/.."
 cargo build --release
 APP=target/Annotate.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp target/release/annotate "$APP/Contents/MacOS/annotate"
+# build.rs renders the icon into its OUT_DIR; take the newest.
+cp "$(ls -t target/release/build/annotate-*/out/AppIcon.icns | head -1)" "$APP/Contents/Resources/AppIcon.icns"
 cp Info.plist "$APP/Contents/Info.plist"
 KC=~/Library/Keychains/annotate.keychain-db
 if security find-identity -p codesigning "$KC" 2>/dev/null | grep -q "Annotate Dev"; then

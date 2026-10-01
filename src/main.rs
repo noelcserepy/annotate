@@ -1,7 +1,6 @@
 mod doc;
 mod editor;
 mod history;
-mod history_view;
 #[cfg(target_os = "macos")]
 mod mac;
 mod render;
@@ -12,26 +11,32 @@ use gpui::{App, AppContext, Application, Bounds, Global, TitlebarOptions, Window
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
 use tray_icon::{TrayIcon, menu::MenuEvent};
 
-use history_view::HistoryView;
 use settings::{Settings, SettingsView};
 
-#[derive(Clone, Copy)]
 pub enum Command {
     Capture,
-    History,
+    /// Reopen the editor for a history entry.
+    Open(String),
     Settings,
     Quit,
 }
 
 impl Command {
-    const ALL: [Command; 4] = [Command::Capture, Command::History, Command::Settings, Command::Quit];
-
-    pub fn id(self) -> &'static str {
+    pub fn id(&self) -> String {
         match self {
-            Command::Capture => "capture",
-            Command::History => "history",
-            Command::Settings => "settings",
-            Command::Quit => "quit",
+            Command::Capture => "capture".into(),
+            Command::Open(id) => format!("open:{id}"),
+            Command::Settings => "settings".into(),
+            Command::Quit => "quit".into(),
+        }
+    }
+
+    fn from_id(id: &str) -> Option<Command> {
+        match id {
+            "capture" => Some(Command::Capture),
+            "settings" => Some(Command::Settings),
+            "quit" => Some(Command::Quit),
+            _ => id.strip_prefix("open:").map(|id| Command::Open(id.into())),
         }
     }
 }
@@ -41,9 +46,8 @@ pub struct AppState {
     hotkeys: GlobalHotKeyManager,
     hotkey: Option<HotKey>,
     capturing: bool,
-    history: Option<WindowHandle<HistoryView>>,
     settings_window: Option<WindowHandle<SettingsView>>,
-    _tray: TrayIcon,
+    tray: TrayIcon,
 }
 
 impl Global for AppState {}
@@ -88,7 +92,11 @@ impl AppState {
 fn run(command: Command, cx: &mut App) {
     match command {
         Command::Capture => capture(cx),
-        Command::History => open_history(cx),
+        Command::Open(id) => {
+            if let Some(capture) = history::load(&id) {
+                editor::open(capture, cx);
+            }
+        }
         Command::Settings => open_settings(cx),
         Command::Quit => cx.quit(),
     }
@@ -108,10 +116,7 @@ fn capture(cx: &mut App) {
         cx.update(|cx| {
             cx.global_mut::<AppState>().capturing = false;
             match capture {
-                Some(capture) => {
-                    editor::open(capture, cx);
-                    history_changed(cx);
-                }
+                Some(capture) => editor::open(capture, cx),
                 // Hand focus back to the app the user was in.
                 None => cx.hide(),
             }
@@ -129,21 +134,8 @@ fn window_options(width: f32, height: f32, cx: &App) -> WindowOptions {
     }
 }
 
-fn open_history(cx: &mut App) {
-    cx.activate(true);
-    if let Some(handle) = cx.global::<AppState>().history
-        && handle.update(cx, |_, window, _| window.activate_window()).is_ok()
-    {
-        return;
-    }
-    let handle = cx.open_window(window_options(880., 620., cx), |_, cx| cx.new(|_| HistoryView::new())).ok();
-    cx.global_mut::<AppState>().history = handle;
-}
-
 pub fn history_changed(cx: &mut App) {
-    if let Some(handle) = cx.global::<AppState>().history {
-        handle.update(cx, |view, _, cx| view.reload(cx)).ok();
-    }
+    tray::refresh(&cx.global::<AppState>().tray);
 }
 
 fn open_settings(cx: &mut App) {
@@ -182,7 +174,7 @@ fn main() {
             }
         }));
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-            if let Some(command) = Command::ALL.into_iter().find(|c| c.id() == event.id.as_ref()) {
+            if let Some(command) = Command::from_id(event.id.as_ref()) {
                 tx.try_send(command).ok();
             }
         }));
@@ -194,9 +186,8 @@ fn main() {
             hotkeys: GlobalHotKeyManager::new().unwrap(),
             hotkey: None,
             capturing: false,
-            history: None,
             settings_window: None,
-            _tray: tray::build(),
+            tray: tray::build(),
         };
         state.set_hotkey(true);
         cx.set_global(state);
