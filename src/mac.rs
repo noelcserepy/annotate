@@ -3,8 +3,8 @@
 use gpui::Window;
 use objc2::{MainThreadMarker, rc::Retained};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBitmapImageRep, NSPasteboard, NSPasteboardTypePNG,
-    NSPasteboardTypeTIFF, NSView, NSWindow,
+    NSApplication, NSApplicationActivationPolicy, NSBitmapImageRep, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeTIFF, NSView,
+    NSWindow,
 };
 use objc2_foundation::{NSData, NSPoint, NSRect, NSSize};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};

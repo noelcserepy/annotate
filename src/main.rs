@@ -7,8 +7,8 @@ mod render;
 mod settings;
 mod tray;
 
-use gpui::{App, AppContext, Application, Bounds, Global, TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, px, size};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
+use gpui::{App, AppContext, Application, Bounds, Global, TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, px, size};
 use tray_icon::{TrayIcon, menu::MenuEvent};
 
 use settings::{Settings, SettingsView};

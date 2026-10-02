@@ -236,7 +236,6 @@ impl Callout {
         let (t, h) = self.tip_along();
         t + h
     }
-
 }
 
 /// Pick the image edge nearest the target and an anchor just beyond it, level with the
@@ -248,16 +247,11 @@ pub fn place(target: &Target, image: (f32, f32), d: &Dims) -> (Side, P) {
         Target::Rect(r) => r,
     };
     let c = region.center();
-    let side = [
-        (Side::Right, w - region.right()),
-        (Side::Left, region.x),
-        (Side::Bottom, h - region.bottom()),
-        (Side::Top, region.y),
-    ]
-    .into_iter()
-    .min_by(|a, b| a.1.total_cmp(&b.1))
-    .map(|(s, _)| s)
-    .unwrap();
+    let side = [(Side::Right, w - region.right()), (Side::Left, region.x), (Side::Bottom, h - region.bottom()), (Side::Top, region.y)]
+        .into_iter()
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(s, _)| s)
+        .unwrap();
 
     let anchor = match side {
         Side::Right => P::new(w + d.gap, c.y),

@@ -4,9 +4,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use cosmic_text::{Attrs, Buffer, Edit, Editor, Family, FontSystem, Metrics, Shaping, SwashCache, Weight, Wrap, fontdb};
-use tiny_skia::{
-    Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, Stroke, Transform,
-};
+use tiny_skia::{Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, Stroke, Transform};
 
 use crate::doc::{Dims, Doc, End, P, R, Target, separate};
 
@@ -134,14 +132,7 @@ pub fn compose(scene: Scene) -> Frame {
 
     let mut pixmap = Pixmap::new(bounds.w as u32, bounds.h as u32).unwrap();
     pixmap.fill(fill);
-    pixmap.draw_pixmap(
-        -bounds.x as i32,
-        -bounds.y as i32,
-        image.as_ref(),
-        &PixmapPaint::default(),
-        Transform::identity(),
-        None,
-    );
+    pixmap.draw_pixmap(-bounds.x as i32, -bounds.y as i32, image.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
     let t = Transform::from_translate(-bounds.x, -bounds.y);
 
     for &r in &rects {
@@ -306,7 +297,7 @@ pub fn edge_color(image: &Pixmap) -> Color {
 }
 
 pub fn pixmap_from_rgba(width: u32, height: u32, mut rgba: Vec<u8>) -> Pixmap {
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         let a = px[3] as u32;
         for c in &mut px[..3] {
             *c = (*c as u32 * a / 255) as u8;
@@ -316,10 +307,14 @@ pub fn pixmap_from_rgba(width: u32, height: u32, mut rgba: Vec<u8>) -> Pixmap {
 }
 
 fn demultiplied(pixmap: &Pixmap) -> Vec<u8> {
-    pixmap.pixels().iter().flat_map(|p| {
-        let c = p.demultiply();
-        [c.red(), c.green(), c.blue(), c.alpha()]
-    }).collect()
+    pixmap
+        .pixels()
+        .iter()
+        .flat_map(|p| {
+            let c = p.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        })
+        .collect()
 }
 
 /// PNG with its DPI set so apps paste retina captures at their on-screen size.
@@ -339,7 +334,7 @@ pub fn encode_png(pixmap: &Pixmap, scale: f32) -> Vec<u8> {
 /// GPUI wants BGRA.
 pub fn to_render_image(pixmap: &Pixmap) -> gpui::RenderImage {
     let mut bgra = demultiplied(pixmap);
-    for px in bgra.chunks_exact_mut(4) {
+    for px in bgra.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
     let buffer = image::RgbaImage::from_raw(pixmap.width(), pixmap.height(), bgra).unwrap();

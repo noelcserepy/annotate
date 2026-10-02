@@ -3,7 +3,10 @@
 
 use std::{env, fs, path::Path, process::Command};
 
-use resvg::{tiny_skia::{Pixmap, Transform}, usvg};
+use resvg::{
+    tiny_skia::{Pixmap, Transform},
+    usvg,
+};
 
 const LOGO: &str = "assets/annotate-logo.svg";
 
