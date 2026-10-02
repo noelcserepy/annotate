@@ -58,7 +58,7 @@ pub fn load(id: &str) -> Option<Capture> {
     let doc = fs::read(dir(id).join("doc.json"))
         .ok()
         .and_then(|json| serde_json::from_slice(&json).ok())
-        .unwrap_or_else(|| Doc { scale: png_scale(&bytes), callouts: Vec::new() });
+        .unwrap_or_else(|| Doc { scale: png_scale(&bytes), callouts: Vec::new(), arrows: Vec::new(), rects: Vec::new() });
     Some(Capture { id: id.to_string(), image, doc })
 }
 

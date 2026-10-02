@@ -5,7 +5,7 @@ use gpui::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{AppState, doc::Style};
+use crate::AppState;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -13,12 +13,11 @@ pub struct Settings {
     /// global-hotkey syntax, e.g. "cmd+shift+4".
     pub hotkey: String,
     pub launch_at_login: bool,
-    pub style: Style,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { hotkey: "cmd+shift+4".into(), launch_at_login: true, style: Style::Elbow }
+        Self { hotkey: "cmd+shift+4".into(), launch_at_login: true }
     }
 }
 
