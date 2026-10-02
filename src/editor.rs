@@ -765,6 +765,10 @@ impl Editor {
         let k = &event.keystroke;
         let m = k.modifiers;
         cx.stop_propagation();
+        // A drag holds an index into the doc, which a key could remove from under it.
+        if !matches!(self.drag, Drag::None) {
+            return;
+        }
 
         if m.platform {
             match k.key.as_str() {
@@ -904,7 +908,9 @@ impl Render for Editor {
         let active = self.active();
         // Items showing their delete button, boxes their handle, and rects their move and
         // resize handles.
+        // A held tool owns every press, so it hides them.
         let controls: Vec<Item> = match self.drag {
+            _ if self.tool.is_some() => Vec::new(),
             Drag::None => {
                 let active = active.map(Item::Callout).filter(|&i| Some(i) != self.hover);
                 [self.hover, active].into_iter().flatten().collect()
