@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use cosmic_text::{Action, Cursor, Edit, Motion, Selection};
 use gpui::{
-    App, AppContext, Bounds, ClipboardItem, Context, Corners, CursorStyle, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderImage, Rgba, Size, TitlebarOptions, Window, WindowBounds,
+    App, AppContext, Bounds, ClipboardItem, Context, Corners, CursorStyle, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderImage, Rgba, Size, TitlebarOptions, Window, WindowBounds,
     WindowOptions, canvas, div, prelude::*, px, size,
 };
 use tiny_skia::{Color, Pixmap};
@@ -34,7 +34,10 @@ enum Mode {
     Idle,
     Selected(usize),
     /// Typing into box `index`; `text` holds its cursor and selection.
-    Editing { index: usize, text: cosmic_text::Editor<'static> },
+    Editing {
+        index: usize,
+        text: cosmic_text::Editor<'static>,
+    },
 }
 
 /// Something with a delete button.
@@ -69,19 +72,36 @@ enum Drag {
     #[default]
     None,
     /// Pressed on the image. A click adds a pointer callout; moving turns it into a marquee.
-    New { start: P },
-    Marquee { start: P, end: P },
+    New {
+        start: P,
+    },
+    Marquee {
+        start: P,
+        end: P,
+    },
     /// Moving a text box by its handle.
-    Box { index: usize, grab: P },
+    Box {
+        index: usize,
+        grab: P,
+    },
     /// Moving an arrow end by the pointer's travel since `last`.
-    End { end: End, last: P },
+    End {
+        end: End,
+        last: P,
+    },
     /// Drawing a standalone arrow with the `Tool`.
     Arrow(usize),
     /// Moving a rect by its handle.
-    MoveRect { item: Item, grab: P },
+    MoveRect {
+        item: Item,
+        grab: P,
+    },
     /// Spanning a rect from `fixed` to the pointer: resizing by its handle, or drawing a new
     /// one with the `Tool`.
-    Resize { item: Item, fixed: P },
+    Resize {
+        item: Item,
+        fixed: P,
+    },
     /// Selecting text inside the box being edited.
     Text,
 }
@@ -127,16 +147,8 @@ pub fn open(capture: Capture, cx: &mut App) {
     let Capture { id, image, doc } = capture;
     let dims = Dims::new(doc.scale);
     let fill = render::edge_color(&image);
-    let frame = render::compose(Scene {
-        image: &image,
-        fill,
-        doc: &doc,
-        dims: &dims,
-        editing: None,
-        selected: None,
-        marquee: None,
-        hot: None,
-    });
+    let frame =
+        render::compose(Scene { image: &image, fill, doc: &doc, dims: &dims, editing: None, selected: None, marquee: None, hot: None });
     let (view, zoom) = fit_view(frame.bounds, None, doc.scale, cx.primary_display().map(|d| d.bounds().size));
     let content = content_size(view, doc.scale, zoom);
 
@@ -229,10 +241,8 @@ fn fit_view(bounds: R, grow_from: Option<R>, scale: f32, screen: Option<Size<Pix
     }
     // Whole points, so the window and the canvas in it sit on device pixels.
     let snap = |n: f32, round: fn(f32) -> f32| round(n / scale) * scale;
-    let v = R::spanning(
-        P::new(snap(v.x, f32::floor), snap(v.y, f32::floor)),
-        P::new(snap(v.right(), f32::ceil), snap(v.bottom(), f32::ceil)),
-    );
+    let v =
+        R::spanning(P::new(snap(v.x, f32::floor), snap(v.y, f32::floor)), P::new(snap(v.right(), f32::ceil), snap(v.bottom(), f32::ceil)));
     (v, zoom)
 }
 
@@ -874,7 +884,13 @@ impl Editor {
         }
         match k.key.as_str() {
             "backspace" => self.edit(|e, fonts| {
-                let reach = if m.platform { Some(Motion::Home) } else if m.alt { Some(Motion::LeftWord) } else { None };
+                let reach = if m.platform {
+                    Some(Motion::Home)
+                } else if m.alt {
+                    Some(Motion::LeftWord)
+                } else {
+                    None
+                };
                 if let Some(reach) = reach.filter(|_| e.selection() == Selection::None) {
                     e.set_selection(Selection::Normal(e.cursor()));
                     e.action(fonts, Action::Motion(reach));
@@ -938,11 +954,7 @@ impl Render for Editor {
         let dark = Rgba { r: 0.11, g: 0.11, b: 0.12, a: 1. };
         // A control of `size` points centered on document point `p`.
         let at = move |p: P, size: f32| {
-            div()
-                .absolute()
-                .left(px((p.x - v.x) * k - size / 2.))
-                .top(px((p.y - v.y) * k - size / 2.))
-                .size(px(size))
+            div().absolute().left(px((p.x - v.x) * k - size / 2.)).top(px((p.y - v.y) * k - size / 2.)).size(px(size))
         };
         let dot = move || div().size(px(2.)).rounded_full().bg(white);
 

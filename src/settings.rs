@@ -1,8 +1,6 @@
 use std::{fs, path::PathBuf};
 
-use gpui::{
-    Context, FocusHandle, KeyDownEvent, Keystroke, MouseButton, Window, div, prelude::*, px, rgb,
-};
+use gpui::{Context, FocusHandle, KeyDownEvent, Keystroke, MouseButton, Window, div, prelude::*, px, rgb};
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
