@@ -17,6 +17,28 @@ impl P {
     pub fn dist(self, o: P) -> f32 {
         ((self.x - o.x).powi(2) + (self.y - o.y).powi(2)).sqrt()
     }
+
+    /// Distance to the nearest point of the segment from `a` to `b`.
+    pub fn dist_to_segment(self, a: P, b: P) -> f32 {
+        let ab = b - a;
+        let len2 = ab.x * ab.x + ab.y * ab.y;
+        let along = if len2 == 0. { 0. } else { (((self - a).x * ab.x + (self - a).y * ab.y) / len2).clamp(0., 1.) };
+        self.dist(P::new(a.x + ab.x * along, a.y + ab.y * along))
+    }
+}
+
+impl std::ops::Add for P {
+    type Output = P;
+    fn add(self, o: P) -> P {
+        P::new(self.x + o.x, self.y + o.y)
+    }
+}
+
+impl std::ops::Sub for P {
+    type Output = P;
+    fn sub(self, o: P) -> P {
+        P::new(self.x - o.x, self.y - o.y)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -73,21 +95,6 @@ impl R {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Style {
-    Elbow,
-    Arrow,
-}
-
-impl Style {
-    pub fn toggled(self) -> Self {
-        match self {
-            Style::Elbow => Style::Arrow,
-            Style::Arrow => Style::Elbow,
-        }
-    }
-}
-
 /// Which edge of the image a callout's text box sits beyond.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Side {
@@ -111,7 +118,21 @@ pub struct Callout {
     pub side: Side,
     pub anchor: P,
     pub text: String,
-    pub style: Style,
+}
+
+/// An arrow without a text box.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct Arrow {
+    pub from: P,
+    pub to: P,
+}
+
+/// An arrow end the user can drag: a callout's tip, or either end of a standalone arrow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum End {
+    Callout(usize),
+    Head(usize),
+    Tail(usize),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -119,6 +140,11 @@ pub struct Doc {
     /// Image pixels per point (2 on retina).
     pub scale: f32,
     pub callouts: Vec<Callout>,
+    #[serde(default)]
+    pub arrows: Vec<Arrow>,
+    /// Rectangles without a text box.
+    #[serde(default)]
+    pub rects: Vec<R>,
 }
 
 /// Visual constants, converted from points to image pixels.
@@ -131,8 +157,9 @@ pub struct Dims {
     pub min_text_w: f32,
     pub radius: f32,
     pub stroke: f32,
-    pub dot: f32,
     pub head: f32,
+    /// How near the pointer must be to an arrow end, arrow or rect outline to grab it.
+    pub grab: f32,
     pub gap: f32,
     pub margin: f32,
     pub spacing: f32,
@@ -151,8 +178,8 @@ impl Dims {
             min_text_w: 6. * s,
             radius: 6. * s,
             stroke: 2.5 * s,
-            dot: 4. * s,
             head: 12. * s,
+            grab: 12. * s,
             gap: 40. * s,
             margin: 14. * s,
             spacing: 12. * s,
@@ -190,13 +217,6 @@ impl Callout {
         }
     }
 
-    /// The tip relative to the anchor: how far out from the box, and how far to the side
-    /// (along the image edge).
-    fn reach(&self) -> (f32, f32) {
-        let (a, t) = (self.anchor, self.tip());
-        if matches!(self.side, Side::Left | Side::Right) { (t.x - a.x, t.y - a.y) } else { (t.y - a.y, t.x - a.x) }
-    }
-
     /// The tip's position along the image edge, and how far in from the edge it sits. The
     /// depth is off by a constant per side, so it compares tips whose boxes sit at different
     /// distances out.
@@ -217,61 +237,6 @@ impl Callout {
         t + h
     }
 
-    /// Connector polyline from anchor to tip. Elbow runs straight out of the box, then
-    /// turns 45° onto the tip. With a `turn`, it first turns sideways that far out from the
-    /// box, then enters the tip at 45°.
-    pub fn connector(&self, turn: Option<f32>) -> Vec<P> {
-        let (a, t) = (self.anchor, self.tip());
-        let (out, side) = self.reach();
-        if self.style == Style::Arrow || side.abs() < 0.5 {
-            return vec![a, t];
-        }
-        // Points `o` out from the box and `s` to the side, from the anchor.
-        let at = |o: f32, s: f32| match self.side {
-            Side::Left | Side::Right => P::new(a.x + o * out.signum(), a.y + s * side.signum()),
-            Side::Top | Side::Bottom => P::new(a.x + s * side.signum(), a.y + o * out.signum()),
-        };
-        match turn {
-            None => vec![a, at(out.abs() - side.abs(), 0.), t],
-            Some(turn) => {
-                let turn = turn.min(out.abs());
-                vec![a, at(turn, 0.), at(turn, side.abs() - (out.abs() - turn)), t]
-            }
-        }
-    }
-}
-
-/// How far out from its box each connector turns sideways, for those whose tip is too far to
-/// the side to reach at 45°. Connectors turning the same way nest: in `foot` order, each turns
-/// nearer the image than the one before, counted from the box nearest the image so boxes
-/// dragged farther out still nest. All turns fit in the gap between the boxes and the image,
-/// clear of other sides' boxes.
-fn turns(callouts: &[Callout], d: &Dims) -> Vec<Option<f32>> {
-    let nest: Vec<Option<(Side, bool, f32, f32)>> = callouts
-        .iter()
-        .map(|c| {
-            let (out, side) = c.reach();
-            let sideways = c.style == Style::Elbow && side.abs() >= 0.5 && out.abs() - side.abs() < d.spacing;
-            // Turning toward the start of the edge nests by foot; the other way, mirrored.
-            let (t, h) = c.tip_along();
-            let row = match c.side {
-                Side::Left => -c.anchor.x,
-                Side::Right => c.anchor.x,
-                Side::Top => -c.anchor.y,
-                Side::Bottom => c.anchor.y,
-            };
-            sideways.then(|| (c.side, side < 0., if side < 0. { t + h } else { h - t }, row))
-        })
-        .collect();
-    nest.iter()
-        .map(|n| {
-            let &(side, back, key, row) = n.as_ref()?;
-            let group = || nest.iter().flatten().filter(|&&(s, b, _, _)| s == side && b == back);
-            let step = d.spacing.min(d.gap / (group().count() + 1) as f32);
-            let nearest = group().map(|g| g.3).fold(f32::MAX, f32::min);
-            Some(row - nearest + (group().filter(|g| g.2 < key).count() + 1) as f32 * step)
-        })
-        .collect()
 }
 
 /// Pick the image edge nearest the target and an anchor just beyond it, level with the
@@ -303,27 +268,13 @@ pub fn place(target: &Target, image: (f32, f32), d: &Dims) -> (Side, P) {
     (side, anchor)
 }
 
-/// Push boxes apart, then route each connector from its pushed anchor. Returns the anchors
-/// and connector paths.
-pub fn layout(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> (Vec<P>, Vec<Vec<P>>) {
-    let anchors = separate(callouts, boxes, d);
-    // A rect tip follows the anchor. Pin it where the callout's own anchor puts it, the tip
-    // `separate` ordered by, so a push doesn't move it.
-    let laid: Vec<Callout> =
-        callouts.iter().zip(&anchors).map(|(c, &anchor)| Callout { anchor, target: Target::Point(c.tip()), ..c.clone() }).collect();
-    let paths = laid.iter().zip(turns(&laid, d)).map(|(c, turn)| c.connector(turn)).collect();
-    (anchors, paths)
-}
-
 /// Push boxes apart along their side, so growing text never covers a neighbour and
 /// connectors don't cross. Returns each callout's anchor after the push.
 ///
-/// A connector sits, at each height above the box row, where its anchor clamps into the 45°
-/// cone below its tip. So with boxes in `foot` order, a box only has to clear the one before
-/// it, and the tip of any earlier connector that reaches its tip from before it with a cone
-/// edge ahead of this one's. Pushing a box later along the side satisfies both, and only
-/// later boxes move.
-fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
+/// Boxes line up in `foot` order. A box clears the one before it, and the tip of any earlier
+/// connector that reaches its tip from before it with a 45° cone edge ahead of this one's.
+/// Pushing a box later along the side satisfies both, and only later boxes move.
+pub fn separate(callouts: &[Callout], boxes: &mut [R], d: &Dims) -> Vec<P> {
     let mut anchors: Vec<P> = callouts.iter().map(|c| c.anchor).collect();
     let mut placed: Vec<usize> = Vec::new();
     for side in [Side::Left, Side::Right, Side::Top, Side::Bottom] {

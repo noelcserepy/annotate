@@ -8,7 +8,7 @@ use tiny_skia::{
     Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, Stroke, Transform,
 };
 
-use crate::doc::{Callout, Dims, Doc, P, R, Style, Target, layout};
+use crate::doc::{Dims, Doc, End, P, R, Target, separate};
 
 const INTER: &[u8] = include_bytes!("../assets/Inter-SemiBold.ttf");
 const RED: [u8; 3] = [0xDC, 0x26, 0x26];
@@ -65,6 +65,8 @@ pub struct Scene<'a> {
     pub editing: Option<(usize, &'a mut Editor<'static>)>,
     pub selected: Option<usize>,
     pub marquee: Option<R>,
+    /// The arrow end under the pointer, whose arrow draws larger.
+    pub hot: Option<End>,
 }
 
 pub struct Frame {
@@ -77,7 +79,7 @@ pub struct Frame {
 }
 
 pub fn compose(scene: Scene) -> Frame {
-    let Scene { image, fill, doc, dims: d, mut editing, selected, marquee } = scene;
+    let Scene { image, fill, doc, dims: d, mut editing, selected, marquee, hot } = scene;
     let mut guard = text();
     let Text { fonts, swash } = &mut *guard;
 
@@ -99,19 +101,29 @@ pub fn compose(scene: Scene) -> Frame {
         };
         boxes.push(c.box_rect(size, d));
     }
-    let (anchors, paths) = layout(&doc.callouts, &mut boxes, d);
+    let anchors = separate(&doc.callouts, &mut boxes, d);
+    // A rect tip follows the anchor. Take it from the callout's own anchor, the tip `separate`
+    // ordered by, so a push doesn't move it.
+    // A connector to a rect has no head; the rect is the target.
+    let callout_lines = doc.callouts.iter().zip(&anchors).map(|(c, &a)| (a, c.tip(), matches!(c.target, Target::Point(_))));
+    let lines: Vec<(P, P, bool)> = callout_lines.chain(doc.arrows.iter().map(|a| (a.from, a.to, true))).collect();
+    let targets = doc.callouts.iter().filter_map(|c| match c.target {
+        Target::Rect(r) => Some(r),
+        Target::Point(_) => None,
+    });
+    let rects: Vec<R> = targets.chain(doc.rects.iter().copied()).collect();
 
-    let image_rect = R::new(0., 0., image.width() as f32, image.height() as f32);
-    let mut bounds = image_rect;
-    let reach = d.stroke + d.dot;
-    for (i, c) in doc.callouts.iter().enumerate() {
-        bounds = bounds.union(&boxes[i].inflate(d.margin));
-        for p in &paths[i] {
-            bounds = bounds.union(&R::new(p.x, p.y, 0., 0.).inflate(d.margin.max(reach)));
+    let mut bounds = R::new(0., 0., image.width() as f32, image.height() as f32);
+    for b in &boxes {
+        bounds = bounds.union(&b.inflate(d.margin));
+    }
+    for &(a, b, _) in &lines {
+        for p in [a, b] {
+            bounds = bounds.union(&R::new(p.x, p.y, 0., 0.).inflate(d.margin));
         }
-        if let Target::Rect(r) = c.target {
-            bounds = bounds.union(&r.inflate(reach));
-        }
+    }
+    for r in &rects {
+        bounds = bounds.union(&r.inflate(d.stroke));
     }
     let bounds = R::new(
         bounds.x.floor(),
@@ -132,11 +144,19 @@ pub fn compose(scene: Scene) -> Frame {
     );
     let t = Transform::from_translate(-bounds.x, -bounds.y);
 
-    for (i, c) in doc.callouts.iter().enumerate() {
-        draw_connector(&mut pixmap, t, c, &paths[i], d);
+    for &r in &rects {
+        draw_rect(&mut pixmap, t, r, d);
+    }
+    let hot_line = match hot {
+        Some(End::Callout(i)) => Some(i),
+        Some(End::Head(i) | End::Tail(i)) => Some(doc.callouts.len() + i),
+        None => None,
+    };
+    for (i, &(from, to, head)) in lines.iter().enumerate() {
+        draw_line(&mut pixmap, t, from, to, head, d, hot_line == Some(i));
     }
     if let Some(r) = marquee {
-        draw_rect_target(&mut pixmap, t, r, d);
+        draw_rect(&mut pixmap, t, r, d);
     }
     for (i, b) in boxes.iter().enumerate() {
         if selected == Some(i) {
@@ -175,57 +195,47 @@ fn paint(rgb: [u8; 3], a: u8) -> Paint<'static> {
     p
 }
 
-fn polyline(points: &[P]) -> Option<tiny_skia::Path> {
-    let mut pb = PathBuilder::new();
-    pb.move_to(points[0].x, points[0].y);
-    for p in &points[1..] {
-        pb.line_to(p.x, p.y);
-    }
-    pb.finish()
-}
-
-fn red_stroke(pixmap: &mut Pixmap, t: Transform, path: &tiny_skia::Path, d: &Dims) {
-    let stroke = Stroke { width: d.stroke, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Default::default() };
+fn red_stroke(pixmap: &mut Pixmap, t: Transform, path: &tiny_skia::Path, width: f32) {
+    let stroke = Stroke { width, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Default::default() };
     pixmap.stroke_path(path, &paint(RED, 255), &stroke, t, None);
 }
 
-fn draw_rect_target(pixmap: &mut Pixmap, t: Transform, r: R, d: &Dims) {
-    red_stroke(pixmap, t, &rounded_rect(r, d.radius * 0.66), d);
+fn draw_rect(pixmap: &mut Pixmap, t: Transform, r: R, d: &Dims) {
+    red_stroke(pixmap, t, &rounded_rect(r, d.radius * 0.66), d.stroke);
 }
 
-fn draw_connector(pixmap: &mut Pixmap, t: Transform, c: &Callout, path: &[P], d: &Dims) {
-    if let Target::Rect(r) = c.target {
-        draw_rect_target(pixmap, t, r, d);
+/// A straight line, with an arrowhead at `tip` if `head`. `hot` draws it a little larger, to
+/// show it can be grabbed.
+fn draw_line(pixmap: &mut Pixmap, t: Transform, from: P, tip: P, head: bool, d: &Dims, hot: bool) {
+    let k = if hot { 1.3 } else { 1. };
+    if !head {
+        let mut pb = PathBuilder::new();
+        pb.move_to(from.x, from.y);
+        pb.line_to(tip.x, tip.y);
+        if let Some(line) = pb.finish() {
+            red_stroke(pixmap, t, &line, d.stroke * k);
+        }
+        return;
     }
-    let tip = *path.last().unwrap();
-    let before = path[path.len() - 2];
-    match c.style {
-        Style::Elbow => {
-            if let Some(line) = polyline(path) {
-                red_stroke(pixmap, t, &line, d);
-            }
-            if matches!(c.target, Target::Point(_)) {
-                let dot = PathBuilder::from_circle(tip.x, tip.y, d.dot).unwrap();
-                pixmap.fill_path(&dot, &paint(RED, 255), FillRule::Winding, t, None);
-            }
-        }
-        Style::Arrow => {
-            let len = tip.dist(before).max(0.001);
-            let dir = P::new((tip.x - before.x) / len, (tip.y - before.y) / len);
-            let head = d.head.min(len);
-            let base = P::new(tip.x - dir.x * head, tip.y - dir.y * head);
-            let side = P::new(-dir.y * head * 0.45, dir.x * head * 0.45);
-            let shaft_end = P::new(tip.x - dir.x * head * 0.5, tip.y - dir.y * head * 0.5);
-            if let Some(line) = polyline(&[before, shaft_end]) {
-                red_stroke(pixmap, t, &line, d);
-            }
-            let mut pb = PathBuilder::new();
-            pb.move_to(tip.x, tip.y);
-            pb.line_to(base.x + side.x, base.y + side.y);
-            pb.line_to(base.x - side.x, base.y - side.y);
-            pb.close();
-            pixmap.fill_path(&pb.finish().unwrap(), &paint(RED, 255), FillRule::Winding, t, None);
-        }
+    let len = tip.dist(from).max(0.001);
+    let dir = P::new((tip.x - from.x) / len, (tip.y - from.y) / len);
+    let head = (d.head * k).min(len);
+    let base = P::new(tip.x - dir.x * head, tip.y - dir.y * head);
+    let side = P::new(-dir.y * head * 0.45, dir.x * head * 0.45);
+    let shaft_end = P::new(tip.x - dir.x * head * 0.5, tip.y - dir.y * head * 0.5);
+    let mut pb = PathBuilder::new();
+    pb.move_to(from.x, from.y);
+    pb.line_to(shaft_end.x, shaft_end.y);
+    if let Some(shaft) = pb.finish() {
+        red_stroke(pixmap, t, &shaft, d.stroke * k);
+    }
+    let mut pb = PathBuilder::new();
+    pb.move_to(tip.x, tip.y);
+    pb.line_to(base.x + side.x, base.y + side.y);
+    pb.line_to(base.x - side.x, base.y - side.y);
+    pb.close();
+    if let Some(head) = pb.finish() {
+        pixmap.fill_path(&head, &paint(RED, 255), FillRule::Winding, t, None);
     }
 }
 
