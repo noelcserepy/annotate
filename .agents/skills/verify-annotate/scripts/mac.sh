@@ -33,7 +33,8 @@ center() {
 state() {
     echo "user-idle-seconds $(ioreg -c IOHIDSystem | awk '/HIDIdleTime/ {print int($NF / 1000000000); exit}')"
     echo "front $(front)"
-    echo "editor $(editor || true)"
+    local r; r=$(editor || true)
+    echo "editor ${r:-none}"
 }
 
 cmd=${1:-}
