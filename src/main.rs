@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod doc;
 mod editor;
 mod history;
@@ -6,6 +8,8 @@ mod mac;
 mod render;
 mod settings;
 mod tray;
+#[cfg(target_os = "windows")]
+mod win;
 
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
 use gpui::{App, AppContext, Application, Bounds, Global, TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, px, size};
@@ -112,7 +116,7 @@ fn capture(cx: &mut App) {
     // focus comes back to us when screencapture exits and the editor opens in front.
     cx.activate(true);
     cx.spawn(async move |cx| {
-        let capture = cx.background_executor().spawn(async { history::capture_region() }).await;
+        let capture = history::capture_region(cx).await;
         cx.update(|cx| {
             cx.global_mut::<AppState>().capturing = false;
             match capture {
@@ -191,6 +195,10 @@ fn main() {
         };
         state.set_hotkey(true);
         cx.set_global(state);
+
+        // GPUI on Windows quits once its last window closes, so keep a hidden one open.
+        #[cfg(target_os = "windows")]
+        cx.open_window(WindowOptions { show: false, focus: false, ..Default::default() }, |_, cx| cx.new(|_| gpui::Empty)).ok();
 
         cx.spawn(async move |cx| {
             while let Ok(command) = rx.recv().await {

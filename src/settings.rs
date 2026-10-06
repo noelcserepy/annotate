@@ -15,7 +15,9 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { hotkey: "cmd+shift+4".into(), launch_at_login: true }
+        // Windows keeps Win+Shift+digit for itself.
+        let hotkey = if cfg!(target_os = "windows") { "ctrl+shift+4" } else { "cmd+shift+4" };
+        Self { hotkey: hotkey.into(), launch_at_login: true }
     }
 }
 
@@ -35,6 +37,7 @@ impl Settings {
 }
 
 /// "cmd+shift+4" -> "⌘⇧4"
+#[cfg(target_os = "macos")]
 fn display(hotkey: &str) -> String {
     let mut mods = String::new();
     let mut key = String::new();
@@ -48,6 +51,22 @@ fn display(hotkey: &str) -> String {
         }
     }
     mods + &key
+}
+
+/// "ctrl+shift+4" -> "Ctrl+Shift+4"
+#[cfg(not(target_os = "macos"))]
+fn display(hotkey: &str) -> String {
+    let names: Vec<String> = hotkey
+        .split('+')
+        .map(|token| match token {
+            "ctrl" => "Ctrl".into(),
+            "alt" => "Alt".into(),
+            "shift" => "Shift".into(),
+            "cmd" => "Win".into(),
+            k => k.to_uppercase(),
+        })
+        .collect();
+    names.join("+")
 }
 
 fn to_hotkey(k: &Keystroke) -> Option<String> {

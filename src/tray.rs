@@ -10,7 +10,12 @@ use crate::{Command, history};
 const RECENT: usize = 5;
 
 pub fn build() -> TrayIcon {
-    TrayIconBuilder::new().with_menu(Box::new(menu())).with_icon_templated(icon()).build().unwrap()
+    let builder = TrayIconBuilder::new().with_menu(Box::new(menu()));
+    #[cfg(target_os = "macos")]
+    let builder = builder.with_icon_templated(icon());
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.with_icon(icon());
+    builder.build().unwrap()
 }
 
 /// The menu lists recent snaps, so it has to be rebuilt whenever history changes.
@@ -51,7 +56,7 @@ fn thumbnail(path: &Path) -> Option<menu::Icon> {
     menu::Icon::from_rgba(canvas.into_raw(), W, H).ok()
 }
 
-/// The logo as an 18pt template image at 2x, rendered by build.rs.
+/// The logo at 18pt 2x, rendered by build.rs.
 fn icon() -> Icon {
     let rgba = include_bytes!(concat!(env!("OUT_DIR"), "/tray.rgba"));
     Icon::from_rgba(rgba.to_vec(), 36, 36).unwrap()
