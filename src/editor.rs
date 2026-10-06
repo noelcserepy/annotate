@@ -199,6 +199,8 @@ pub fn open(capture: Capture, cx: &mut App) {
     if let Ok(handle) = handle {
         handle
             .update(cx, |_, window, cx| {
+                // Windows opens new windows behind the app in front.
+                window.activate_window();
                 let editor = cx.entity();
                 window.on_window_should_close(cx, move |_, cx| {
                     editor.update(cx, |editor, cx| editor.save(cx));
@@ -589,8 +591,8 @@ impl Editor {
         let png = render::encode_png(&frame.pixmap, self.doc.scale);
         #[cfg(target_os = "macos")]
         crate::mac::copy_image(&png, (frame.bounds.w / self.doc.scale, frame.bounds.h / self.doc.scale));
-        #[cfg(not(target_os = "macos"))]
-        cx.write_to_clipboard(ClipboardItem::new_image(&gpui::Image::from_bytes(gpui::ImageFormat::Png, png)));
+        #[cfg(target_os = "windows")]
+        crate::win::copy_image(&png, &frame.pixmap);
         self.close(window, cx);
     }
 
@@ -780,7 +782,7 @@ impl Editor {
             return;
         }
 
-        if m.platform {
+        if m.secondary() {
             match k.key.as_str() {
                 "c" => {
                     match self.selection() {
@@ -851,11 +853,13 @@ impl Editor {
     fn type_key(&mut self, event: &KeyDownEvent) {
         let k = &event.keystroke;
         let m = k.modifiers;
+        // Option jumps words on macOS, Ctrl everywhere else.
+        let word = if cfg!(target_os = "macos") { m.alt } else { m.control };
         let motion = match k.key.as_str() {
             "left" if m.platform => Some(Motion::Home),
             "right" if m.platform => Some(Motion::End),
-            "left" if m.alt => Some(Motion::LeftWord),
-            "right" if m.alt => Some(Motion::RightWord),
+            "left" if word => Some(Motion::LeftWord),
+            "right" if word => Some(Motion::RightWord),
             "left" => Some(Motion::Left),
             "right" => Some(Motion::Right),
             "up" if m.platform => Some(Motion::BufferStart),
@@ -886,7 +890,7 @@ impl Editor {
             "backspace" => self.edit(|e, fonts| {
                 let reach = if m.platform {
                     Some(Motion::Home)
-                } else if m.alt {
+                } else if word {
                     Some(Motion::LeftWord)
                 } else {
                     None
@@ -903,7 +907,9 @@ impl Editor {
                 if m.control || m.platform {
                     return;
                 }
-                if let Some(chars) = &k.key_char {
+                // Windows reports space as a named key without a character.
+                let chars = k.key_char.clone().or_else(|| (k.key == "space").then(|| " ".into()));
+                if let Some(chars) = chars {
                     self.edit(|e, fonts| {
                         for c in chars.chars() {
                             e.action(fonts, Action::Insert(c));

@@ -1,14 +1,17 @@
 //! Every capture lives in its own folder: the untouched screenshot, the annotations,
 //! and a thumbnail of the latest result.
 
+#[cfg(target_os = "windows")]
+use std::time::Duration;
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use chrono::{DateTime, Local};
+use gpui::AsyncApp;
 use tiny_skia::Pixmap;
 
 use crate::{doc::Doc, render};
@@ -34,21 +37,50 @@ fn dir(id: &str) -> PathBuf {
 }
 
 /// Let the user drag out a region with the system marquee. `None` if they cancelled.
-pub fn capture_region() -> Option<Capture> {
+pub async fn capture_region(cx: &AsyncApp) -> Option<Capture> {
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
     let id = format!("{millis:015}");
     fs::create_dir_all(dir(&id)).ok()?;
     let path = dir(&id).join("original.png");
-    let status = Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(&path).status();
-    if status.is_err() || !path.exists() {
-        fs::remove_dir_all(dir(&id)).ok();
-        return None;
-    }
+    snap(&path, cx).await;
     let capture = load(&id);
     if capture.is_none() {
         fs::remove_dir_all(dir(&id)).ok();
     }
     capture
+}
+
+#[cfg(target_os = "macos")]
+async fn snap(path: &Path, cx: &AsyncApp) {
+    let path = path.to_owned();
+    let screencapture = async move { Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(&path).status() };
+    cx.background_executor().spawn(screencapture).await.ok();
+}
+
+/// Snipping Tool's marquee only puts its result on the clipboard and says nothing when
+/// the user cancels, so watch the clipboard for a new image and give up after a minute.
+#[cfg(target_os = "windows")]
+async fn snap(path: &Path, cx: &AsyncApp) {
+    let before = clipboard_png(cx).map(|image| image.id());
+    if Command::new("explorer.exe").arg("ms-screenclip:").spawn().is_err() {
+        return;
+    }
+    for _ in 0..300 {
+        cx.background_executor().timer(Duration::from_millis(200)).await;
+        if let Some(image) = clipboard_png(cx).filter(|image| Some(image.id()) != before) {
+            fs::write(path, image.bytes).ok();
+            return;
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn clipboard_png(cx: &AsyncApp) -> Option<gpui::Image> {
+    let item = cx.update(|cx| cx.read_from_clipboard()).ok()??;
+    item.into_entries().find_map(|entry| match entry {
+        gpui::ClipboardEntry::Image(image) if image.format == gpui::ImageFormat::Png => Some(image),
+        _ => None,
+    })
 }
 
 pub fn load(id: &str) -> Option<Capture> {
