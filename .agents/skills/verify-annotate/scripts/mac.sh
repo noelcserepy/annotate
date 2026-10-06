@@ -38,7 +38,11 @@ state() {
 
 cmd=${1:-}
 shift || true
-[[ "$cmd" =~ ^(launch|doctor|cleanup)$ ]] || echo "> $cmd $*" >> "$(run_dir)/log.txt"
+if [[ ! "$cmd" =~ ^(launch|doctor|cleanup)$ ]]; then
+    log="$(run_dir)/log.txt"
+    echo "> $cmd $*" >> "$log"
+    exec > >(tee -a "$log") 2>&1
+fi
 case "$cmd" in
     launch)
         if [[ -f "$scratch/pid" ]] && kill -0 "$(pid)" 2>/dev/null; then
