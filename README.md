@@ -1,10 +1,13 @@
 # Annotate
 
-Screenshot, point at things, paste. A tray app for macOS and Windows.
+Take a screenshot, click to add notes, copy it. For macOS and Windows.
 
 <!-- TODO: demo GIF: capture, click twice, type, Cmd+C, paste into Slack -->
 
-Press the capture shortcut anywhere and drag out a region. The screenshot opens in an editor. Click a spot and type to add a callout. Annotate places the text box outside the screenshot and grows the canvas to fit, so your notes never cover what they point at. Boxes stack in order and their connectors don't cross. Cmd+C copies the result and closes the editor. Paste it wherever you were going.
+1. Press Cmd+Shift+4 (Ctrl+Shift+4 on Windows) and drag over part of the screen.
+2. Click where you want a note.
+3. Type.
+4. Press Cmd+C (Ctrl+C). The screenshot with your notes is now on the clipboard.
 
 ## Keys
 
@@ -62,18 +65,9 @@ On macOS you also need the Xcode command line tools (`xcode-select --install`). 
 
 On Windows you need the MSVC toolchain, which the Rust installer offers to set up. Run `cargo build --release` and take `target\release\annotate.exe`.
 
-## Contributing
+## Issues
 
-Issues and PRs welcome. There are no tests and no CI. Before you open a PR, run:
-
-```sh
-cargo fmt --check
-cargo clippy --release --locked -- -D warnings
-```
-
-Clippy only checks the platform you're on. If you touched shared code, say which OS you built it on.
-
-`src/doc.rs` holds the annotation model and the layout that keeps boxes and connectors apart. `src/render.rs` draws a document to a pixmap, and `src/editor.rs` is the GPUI window around both. The UI uses [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui), Zed's UI framework. It has no docs, so read its source.
+Found a bug or want a feature? [Open an issue](https://github.com/noelcserepy/annotate/issues). I don't accept pull requests.
 
 ## License
 
