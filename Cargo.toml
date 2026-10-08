@@ -2,6 +2,11 @@
 name = "annotate"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.90"
+description = "Screenshot, add callouts, paste. A tray app for macOS and Windows."
+license = "MIT"
+repository = "https://github.com/noelcserepy/annotate"
+publish = false
 
 [dependencies]
 gpui = { version = "0.2.2", features = ["runtime_shaders"] }

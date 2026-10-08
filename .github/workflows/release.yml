@@ -1,0 +1,43 @@
+# Push a tag like v0.1.0 to build both apps and publish them as a GitHub release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: scripts/bundle.sh universal
+      - run: ditto -c -k --keepParent target/Annotate.app Annotate-macos.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mac
+          path: Annotate-macos.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: cargo build --release --locked
+      - run: Compress-Archive target/release/annotate.exe Annotate-windows.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: Annotate-windows.zip
+
+  release:
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes Annotate-macos.zip Annotate-windows.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
