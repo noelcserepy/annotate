@@ -1,12 +1,9 @@
 //! Every capture lives in its own folder: the untouched screenshot, the annotations,
 //! and a thumbnail of the latest result.
 
-#[cfg(target_os = "windows")]
-use std::time::Duration;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -14,7 +11,10 @@ use chrono::{DateTime, Local};
 use gpui::AsyncApp;
 use tiny_skia::Pixmap;
 
-use crate::{doc::Doc, render};
+use crate::{
+    doc::{Doc, Style},
+    render,
+};
 
 pub struct Capture {
     pub id: String,
@@ -36,14 +36,14 @@ fn dir(id: &str) -> PathBuf {
     root().join(id)
 }
 
-/// Let the user drag out a region with the system marquee. `None` if they cancelled.
-pub async fn capture_region(cx: &AsyncApp) -> Option<Capture> {
+/// Let the user drag out a region of the screen, to annotate in `style`. `None` if they cancelled.
+pub async fn capture_region(style: &Style, cx: &AsyncApp) -> Option<Capture> {
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
     let id = format!("{millis:015}");
     fs::create_dir_all(dir(&id)).ok()?;
     let path = dir(&id).join("original.png");
     snap(&path, cx).await;
-    let capture = load(&id);
+    let capture = load(&id, style);
     if capture.is_none() {
         fs::remove_dir_all(dir(&id)).ok();
     }
@@ -53,37 +53,19 @@ pub async fn capture_region(cx: &AsyncApp) -> Option<Capture> {
 #[cfg(target_os = "macos")]
 async fn snap(path: &Path, cx: &AsyncApp) {
     let path = path.to_owned();
-    let screencapture = async move { Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(&path).status() };
+    let screencapture = async move { std::process::Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(&path).status() };
     cx.background_executor().spawn(screencapture).await.ok();
 }
 
-/// Snipping Tool's marquee only puts its result on the clipboard and says nothing when
-/// the user cancels, so watch the clipboard for a new image and give up after a minute.
 #[cfg(target_os = "windows")]
-async fn snap(path: &Path, cx: &AsyncApp) {
-    let before = clipboard_png(cx).map(|image| image.id());
-    if Command::new("explorer.exe").arg("ms-screenclip:").spawn().is_err() {
-        return;
-    }
-    for _ in 0..300 {
-        cx.background_executor().timer(Duration::from_millis(200)).await;
-        if let Some(image) = clipboard_png(cx).filter(|image| Some(image.id()) != before) {
-            fs::write(path, image.bytes).ok();
-            return;
-        }
+async fn snap(path: &Path, _: &AsyncApp) {
+    if let Some(image) = crate::win::select_region().await {
+        image.save(path).ok();
     }
 }
 
-#[cfg(target_os = "windows")]
-fn clipboard_png(cx: &AsyncApp) -> Option<gpui::Image> {
-    let item = cx.update(|cx| cx.read_from_clipboard()).ok()??;
-    item.into_entries().find_map(|entry| match entry {
-        gpui::ClipboardEntry::Image(image) if image.format == gpui::ImageFormat::Png => Some(image),
-        _ => None,
-    })
-}
-
-pub fn load(id: &str) -> Option<Capture> {
+/// `style` is for a capture that has no annotations saved yet.
+pub fn load(id: &str, style: &Style) -> Option<Capture> {
     let bytes = fs::read(dir(id).join("original.png")).ok()?;
     let rgba = image::load_from_memory(&bytes).ok()?.to_rgba8();
     let image = render::pixmap_from_rgba(rgba.width(), rgba.height(), rgba.into_raw());
@@ -92,6 +74,7 @@ pub fn load(id: &str) -> Option<Capture> {
         callouts: Vec::new(),
         arrows: Vec::new(),
         rects: Vec::new(),
+        style: style.clone(),
     });
     Some(Capture { id: id.to_string(), image, doc })
 }

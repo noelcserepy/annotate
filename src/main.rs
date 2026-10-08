@@ -8,6 +8,7 @@ mod mac;
 mod render;
 mod settings;
 mod tray;
+mod welcome;
 #[cfg(target_os = "windows")]
 mod win;
 
@@ -62,7 +63,7 @@ impl AppState {
         let before = state.settings.clone();
         f(&mut state.settings);
         state.settings.save();
-        if before.hotkey != state.settings.hotkey {
+        if before.keys.capture != state.settings.keys.capture {
             state.set_hotkey(true);
         }
         if before.launch_at_login != state.settings.launch_at_login {
@@ -83,12 +84,13 @@ impl AppState {
         if !enabled {
             return;
         }
-        match self.settings.hotkey.parse::<HotKey>() {
+        let keys = &self.settings.keys.capture;
+        match keys.parse::<HotKey>() {
             Ok(hotkey) => match self.hotkeys.register(hotkey) {
                 Ok(()) => self.hotkey = Some(hotkey),
-                Err(e) => eprintln!("register {}: {e}", self.settings.hotkey),
+                Err(e) => eprintln!("register {keys}: {e}"),
             },
-            Err(e) => eprintln!("parse {}: {e}", self.settings.hotkey),
+            Err(e) => eprintln!("parse {keys}: {e}"),
         }
     }
 }
@@ -97,7 +99,7 @@ fn run(command: Command, cx: &mut App) {
     match command {
         Command::Capture => capture(cx),
         Command::Open(id) => {
-            if let Some(capture) = history::load(&id) {
+            if let Some(capture) = history::load(&id, &cx.global::<AppState>().settings.style) {
                 editor::open(capture, cx);
             }
         }
@@ -112,11 +114,12 @@ fn capture(cx: &mut App) {
         return;
     }
     state.capturing = true;
+    let style = state.settings.style.clone();
     // macOS only lets us take focus right after the user's key press. Take it now, so
     // focus comes back to us when screencapture exits and the editor opens in front.
     cx.activate(true);
     cx.spawn(async move |cx| {
-        let capture = history::capture_region(cx).await;
+        let capture = history::capture_region(&style, cx).await;
         cx.update(|cx| {
             cx.global_mut::<AppState>().capturing = false;
             match capture {
@@ -142,17 +145,19 @@ pub fn history_changed(cx: &mut App) {
     tray::refresh(&cx.global::<AppState>().tray);
 }
 
-fn open_settings(cx: &mut App) {
+pub fn open_settings(cx: &mut App) {
     cx.activate(true);
     if let Some(handle) = cx.global::<AppState>().settings_window
         && handle.update(cx, |_, window, _| window.activate_window()).is_ok()
     {
         return;
     }
-    let mut options = window_options(300., 116., cx);
+    let mut options = window_options(440., 500., cx);
     options.is_resizable = false;
     let handle = cx.open_window(options, |window, cx| {
-        let view = cx.new(SettingsView::new);
+        // Windows opens new windows behind the app in front.
+        window.activate_window();
+        let view = cx.new(|cx| SettingsView::new(window, cx));
         // Never leave the shortcut disabled because the window closed mid-recording.
         window.on_window_should_close(cx, |_, cx| {
             AppState::set_hotkey_enabled(true, cx);
@@ -199,6 +204,11 @@ fn main() {
         // GPUI on Windows quits once its last window closes, so keep a hidden one open.
         #[cfg(target_os = "windows")]
         cx.open_window(WindowOptions { show: false, focus: false, ..Default::default() }, |_, cx| cx.new(|_| gpui::Empty)).ok();
+
+        if !cx.global::<AppState>().settings.welcomed {
+            AppState::update_settings(cx, |s| s.welcomed = true);
+            welcome::open(cx);
+        }
 
         cx.spawn(async move |cx| {
             while let Ok(command) = rx.recv().await {

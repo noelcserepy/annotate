@@ -27,8 +27,7 @@ Preconditions:
 
 ## Gotchas
 
-- Windows uses Snipping Tool (`ms-screenclip:`). A cancelled snip leaves Annotate waiting up to 60 s for the clipboard, and during that time the shortcut does nothing.
-- Windows only notices a new capture when the clipboard image changes. Capturing the exact same pixels twice in a row looks like a cancel.
+- On Windows the overlay is a frozen screenshot, so anything that changes on screen after the hotkey isn't in the capture. Escape, a right click, a click without a drag and switching away all cancel.
 - On the Mac, `screencapture -i` needs Screen Recording permission for the app running the shell. Without it the capture comes back as wallpaper only, so check the shot.
 - The tray `Capture` item can't be driven by this harness. Report `capture-tray` as skipped unless a person clicks it.
 - If another app owns the shortcut (Greenshot used to own Ctrl+Shift+4 on win-dev), nothing happens and `capture` fails with "overlay never came up".

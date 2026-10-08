@@ -5,15 +5,17 @@ use std::sync::Arc;
 use cosmic_text::{Action, Cursor, Edit, Motion, Selection};
 use gpui::{
     App, AppContext, Bounds, ClipboardItem, Context, Corners, CursorStyle, FocusHandle, KeyDownEvent, KeyUpEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderImage, Rgba, Size, TitlebarOptions, Window, WindowBounds,
-    WindowOptions, canvas, div, prelude::*, px, size,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, PromptLevel, RenderImage, Rgba, Size, TitlebarOptions, Window,
+    WindowBounds, WindowOptions, canvas, div, prelude::*, px, size,
 };
 use tiny_skia::{Color, Pixmap};
 
 use crate::{
+    AppState,
     doc::{Arrow, Callout, Dims, Doc, End, P, R, Side, Target, place},
     history::{self, Capture},
     render::{self, Frame, Scene},
+    settings::{self, Keys, Shortcut},
 };
 
 /// Smallest window content in points, so tiny captures still get a usable window.
@@ -58,11 +60,14 @@ enum Tool {
 }
 
 impl Tool {
-    fn for_key(key: &str) -> Option<Self> {
-        match key {
-            "a" => Some(Tool::Arrow),
-            "r" => Some(Tool::Rect),
-            _ => None,
+    fn for_key(k: &gpui::Keystroke, keys: &Keys) -> Option<Self> {
+        let key = settings::combo(k);
+        if key == keys.arrow {
+            Some(Tool::Arrow)
+        } else if key == keys.rect {
+            Some(Tool::Rect)
+        } else {
+            None
         }
     }
 }
@@ -145,7 +150,7 @@ pub fn open(capture: Capture, cx: &mut App) {
         return;
     }
     let Capture { id, image, doc } = capture;
-    let dims = Dims::new(doc.scale);
+    let dims = Dims::new(doc.scale, &doc.style);
     let fill = render::edge_color(&image);
     let frame =
         render::compose(Scene { image: &image, fill, doc: &doc, dims: &dims, editing: None, selected: None, marquee: None, hot: None });
@@ -596,6 +601,25 @@ impl Editor {
         self.close(window, cx);
     }
 
+    /// Write the image to the save folder. Stays open if that fails, so nothing is lost.
+    fn save_and_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.commit();
+        let png = render::encode_png(&self.clean_frame().pixmap, self.doc.scale);
+        let dir = cx.global::<AppState>().settings.save_dir.clone();
+        let stamp = chrono::Local::now().format("%Y-%m-%d %H.%M.%S");
+        // A second save within the same second gets " (2)" instead of replacing the first.
+        let name = |n| if n == 1 { format!("Annotate {stamp}.png") } else { format!("Annotate {stamp} ({n}).png") };
+        let path = (1..).map(|n| dir.join(name(n))).find(|path| !path.exists()).unwrap();
+        match std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(path, png)) {
+            Ok(()) => self.close(window, cx),
+            Err(e) => {
+                let detail = format!("{}: {e}", dir.display());
+                _ = window.prompt(PromptLevel::Critical, "Couldn't save the image", Some(&detail), &["OK"], cx);
+                self.refresh(window, cx);
+            }
+        }
+    }
+
     fn undo(&mut self) {
         if let Some(doc) = self.undo.pop() {
             self.doc = doc;
@@ -782,17 +806,33 @@ impl Editor {
             return;
         }
 
+        if m.secondary()
+            && k.key == "c"
+            && let Some(text) = self.selection()
+        {
+            return cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
+        let keys = cx.global::<AppState>().settings.keys.clone();
+        // A key without modifiers types into or edits the active box rather than running a shortcut.
+        let plain = !(m.control || m.alt || m.platform);
+        if !(plain && self.active().is_some()) {
+            let combo = settings::combo(k);
+            let shortcut = [Shortcut::Copy, Shortcut::Save, Shortcut::Undo, Shortcut::Close].into_iter().find(|s| s.of(&keys) == combo);
+            match shortcut {
+                Some(Shortcut::Copy) => return self.copy_and_close(window, cx),
+                Some(Shortcut::Save) => return self.save_and_close(window, cx),
+                Some(Shortcut::Close) => return self.close(window, cx),
+                Some(Shortcut::Undo) => {
+                    self.undo();
+                    return self.refresh(window, cx);
+                }
+                _ => {}
+            }
+        }
+
         if m.secondary() {
             match k.key.as_str() {
-                "c" => {
-                    match self.selection() {
-                        Some(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
-                        None => self.copy_and_close(window, cx),
-                    }
-                    return;
-                }
                 "w" => return self.close(window, cx),
-                "z" => self.undo(),
                 "a" => self.edit(|e, fonts| {
                     e.set_selection(Selection::Normal(Cursor::new(0, 0)));
                     e.action(fonts, Action::Motion(Motion::BufferEnd));
@@ -823,14 +863,13 @@ impl Editor {
                 self.mode = if self.commit().is_some() { Mode::Idle } else { Mode::Selected(i) };
             }
             ("escape", Mode::Selected(_)) => self.mode = Mode::Idle,
-            ("escape", Mode::Idle) => return self.close(window, cx),
             ("backspace" | "delete", Mode::Selected(i)) => self.delete(*i),
             (_, Mode::Editing { .. }) => self.type_key(event),
-            (key, _) if !m.modified() && Tool::for_key(key).is_some() => {
+            _ if !m.modified() && Tool::for_key(k, &keys).is_some() => {
                 if event.is_held {
                     return;
                 }
-                self.tool = Tool::for_key(key);
+                self.tool = Tool::for_key(k, &keys);
             }
             (_, Mode::Selected(i)) if k.key_char.is_some() && !m.control => {
                 let i = *i;
@@ -844,7 +883,8 @@ impl Editor {
     }
 
     fn key_up(&mut self, event: &KeyUpEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tool.is_some() && self.tool == Tool::for_key(&event.keystroke.key) {
+        let keys = &cx.global::<AppState>().settings.keys;
+        if self.tool.is_some() && self.tool == Tool::for_key(&event.keystroke, keys) {
             self.tool = None;
             self.refresh(window, cx);
         }

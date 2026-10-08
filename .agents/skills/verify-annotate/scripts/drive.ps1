@@ -41,20 +41,26 @@ function annotate-pid {
     $p.Id
 }
 
-# The editor is Annotate's visible GPUI window. The settings window has the same class,
-# so this takes the first one; close settings before driving the editor.
-function editor-rect {
+# Annotate's first visible window of class `$class`.
+function window-rect($class) {
     $ap = annotate-pid
     $script:found = $null
     [U]::EnumWindows({ param($h, $l)
         $p = 0; [U]::GetWindowThreadProcessId($h, [ref]$p) | Out-Null
         if ($p -eq $ap -and [U]::IsWindowVisible($h)) {
             $c = New-Object Text.StringBuilder 64; [U]::GetClassName($h, $c, 64) | Out-Null
-            if ($c.ToString() -eq "Zed::Window") { $r = New-Object RECT; [U]::GetWindowRect($h, [ref]$r) | Out-Null; $script:found = $r }
+            if ($c.ToString() -eq $class) { $r = New-Object RECT; [U]::GetWindowRect($h, [ref]$r) | Out-Null; $script:found = $r }
         }
         $true }, [IntPtr]::Zero) | Out-Null
     $script:found
 }
+
+# The editor is a GPUI window. The settings and welcome windows have the same class, so
+# close them before driving the editor.
+function editor-rect { window-rect "Zed::Window" }
+
+# The capture overlay covers every monitor until the user drags or cancels.
+function overlay-up { [bool](window-rect "AnnotateCapture") }
 
 function wait-editor($seconds) {
     for ($i = 0; $i -lt $seconds * 4; $i++) {
@@ -111,7 +117,9 @@ function save-shot($name, $rect) {
 
 function hotkey {
     $settings = Join-Path $env:APPDATA "Annotate\settings.json"
-    if (Test-Path $settings) { (Get-Content $settings -Raw | ConvertFrom-Json).hotkey } else { "ctrl+shift+4" }
+    # Settings that never changed the shortcut don't list it.
+    $keys = if (Test-Path $settings) { (Get-Content $settings -Raw | ConvertFrom-Json).keys.capture }
+    if ($keys) { $keys } else { "ctrl+shift+4" }
 }
 
 $job = (Get-Content (Join-Path $root "job.txt") -Raw).Trim().Split(" ")
@@ -131,13 +139,8 @@ try {
         "capture" {
             if (editor-rect) { throw "an Annotate window is already open; close it first" }
             press (hotkey)
-            $overlay = $false
-            for ($i = 0; $i -lt 40 -and -not $overlay; $i++) {
-                Start-Sleep -Milliseconds 250
-                $overlay = (fg-proc).ProcessName -match "SnippingTool|ScreenClippingHost"
-            }
-            if (-not $overlay) { throw "Snipping Tool overlay never came up (foreground: $((fg-proc).ProcessName)); is the hotkey registered?" }
-            Start-Sleep -Milliseconds 500
+            for ($i = 0; $i -lt 20 -and -not (overlay-up); $i++) { Start-Sleep -Milliseconds 100 }
+            if (-not (overlay-up)) { throw "capture overlay never came up (foreground: $((fg-proc).ProcessName)); is the hotkey registered?" }
             mouse-drag ([int]$a[0]) ([int]$a[1]) ([int]$a[2]) ([int]$a[3])
             $r = wait-editor 10
             if (-not $r) { throw "no editor window within 10s" }
@@ -178,9 +181,9 @@ try {
                 [IO.File]::WriteAllBytes($path, $ms.ToArray()); say "png $((Get-Item $path).Length) bytes $path"
             } else { say "png none" }
         }
-        # Dismiss a Snipping Tool overlay a failed capture left behind.
+        # Dismiss a capture overlay a failed capture left behind.
         "settle" {
-            if ((fg-proc).ProcessName -match "SnippingTool|ScreenClippingHost") { press "escape"; say "dismissed snip overlay" }
+            if (overlay-up) { press "escape"; say "dismissed capture overlay" }
         }
         default { throw "unknown action '$action'" }
     }

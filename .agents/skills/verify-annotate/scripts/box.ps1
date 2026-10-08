@@ -79,7 +79,8 @@ switch ($Action) {
         elseif ($p.StartTime -lt (Get-Item $installed).LastWriteTime) { "FAIL running process predates the installed exe" }
         else { "ok annotate pid $($p.Id) on the desktop" }
         $settings = "$env:APPDATA\Annotate\settings.json"
-        "hotkey $(if (Test-Path $settings) { (Get-Content $settings -Raw | ConvertFrom-Json).hotkey } else { 'ctrl+shift+4 (default)' })"
+        $keys = if (Test-Path $settings) { (Get-Content $settings -Raw | ConvertFrom-Json).keys.capture }
+        "hotkey $(if ($keys) { $keys } else { 'ctrl+shift+4 (default)' })"
         if (Test-Path $started) { "run in progress since $(Get-Content $started)" }
         desktop "state"
     }
@@ -103,7 +104,7 @@ switch ($Action) {
             if (Test-Path $doc) { Get-Content $doc -Raw }
         }
     }
-    # Leaves the app as the user had it: no snip overlay, no editor, no entries from this run.
+    # Leaves the app as the user had it: no capture overlay, no editor, no entries from this run.
     "cleanup" {
         desktop "settle"
         $state = desktop "state"
