@@ -1,6 +1,7 @@
-//! Renders assets/annotate-logo.svg into the app icon (`AppIcon.icns`, which
-//! scripts/bundle.sh copies into the bundle) and the tray icon: a template image on
-//! macOS, the logo itself elsewhere.
+//! Renders assets/annotate-logo.svg into the app icon and the tray icon. The app icon
+//! is `AppIcon.icns` on macOS, which scripts/bundle.sh copies into the bundle, and an
+//! icon resource linked into the exe on Windows. The tray icon is a template image on
+//! macOS and the logo itself elsewhere.
 
 use std::{env, fs, path::Path, process::Command};
 
@@ -17,11 +18,16 @@ fn main() {
     let out = Path::new(&out);
     let tree = usvg::Tree::from_data(&fs::read(LOGO).unwrap(), &usvg::Options::default()).unwrap();
 
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+
     // 18pt at 2x.
-    let rgba = if env::var("CARGO_CFG_TARGET_OS").unwrap() == "macos" {
+    let rgba = if os == "macos" {
         app_icon(&tree, out);
         menubar_template(&render(&tree, 36, 30.))
     } else {
+        if os == "windows" {
+            exe_icon(&tree, out);
+        }
         render(&tree, 36, 36.)
             .pixels()
             .iter()
@@ -63,6 +69,32 @@ fn app_icon(tree: &usvg::Tree, out: &Path) {
     }
     let status = Command::new("iconutil").arg("-c").arg("icns").arg(&iconset).arg("-o").arg(out.join("AppIcon.icns")).status();
     assert!(status.is_ok_and(|s| s.success()), "iconutil failed");
+}
+
+/// Explorer shows icon resource 1 as the exe's icon, and GPUI loads it for its windows.
+fn exe_icon(tree: &usvg::Tree, out: &Path) {
+    let sizes = [16, 24, 32, 48, 64, 256];
+    let pngs: Vec<Vec<u8>> = sizes.iter().map(|&size| render(tree, size, size as f32).encode_png().unwrap()).collect();
+    // ICO: a 6-byte header, a 16-byte entry per image, then the images as PNGs.
+    let mut ico = [0, 0, 1, 0].to_vec();
+    ico.extend((sizes.len() as u16).to_le_bytes());
+    let mut offset = 6 + 16 * sizes.len();
+    for (size, png) in sizes.iter().zip(&pngs) {
+        // A side of 256 is written as 0.
+        let side = (size % 256) as u8;
+        ico.extend([side, side, 0, 0]);
+        ico.extend(1u16.to_le_bytes());
+        ico.extend(32u16.to_le_bytes());
+        ico.extend((png.len() as u32).to_le_bytes());
+        ico.extend((offset as u32).to_le_bytes());
+        offset += png.len();
+    }
+    pngs.iter().for_each(|png| ico.extend(png));
+    let ico_path = out.join("annotate.ico");
+    fs::write(&ico_path, ico).unwrap();
+    let rc = out.join("annotate.rc");
+    fs::write(&rc, format!("1 ICON \"{}\"\n", ico_path.display().to_string().replace('\\', "\\\\"))).unwrap();
+    embed_resource::compile(&rc, embed_resource::NONE).manifest_required().unwrap();
 }
 
 /// The logo scaled to `content` pixels, centered on a `size` square canvas.
