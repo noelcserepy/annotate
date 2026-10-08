@@ -605,8 +605,11 @@ impl Editor {
         self.commit();
         let png = render::encode_png(&self.clean_frame().pixmap, self.doc.scale);
         let dir = cx.global::<AppState>().settings.save_dir.clone();
-        let name = format!("Annotate {}.png", chrono::Local::now().format("%Y-%m-%d %H.%M.%S"));
-        match std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(name), png)) {
+        let stamp = chrono::Local::now().format("%Y-%m-%d %H.%M.%S");
+        // A second save within the same second gets " (2)" instead of replacing the first.
+        let name = |n| if n == 1 { format!("Annotate {stamp}.png") } else { format!("Annotate {stamp} ({n}).png") };
+        let path = (1..).map(|n| dir.join(name(n))).find(|path| !path.exists()).unwrap();
+        match std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(path, png)) {
             Ok(()) => self.close(window, cx),
             Err(e) => {
                 let detail = format!("{}: {e}", dir.display());

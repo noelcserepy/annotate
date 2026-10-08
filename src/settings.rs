@@ -139,7 +139,8 @@ pub fn combo(k: &Keystroke) -> String {
     let m = &k.modifiers;
     let mods = [(m.control, "ctrl"), (m.alt, "alt"), (m.shift, "shift"), (m.platform, "cmd")];
     let mut parts: Vec<&str> = mods.into_iter().filter(|(on, _)| *on).map(|(_, name)| name).collect();
-    parts.push(&k.key);
+    // "+" separates the parts, so the key itself is spelled out.
+    parts.push(if k.key == "+" { "plus" } else { &k.key });
     parts.join("+")
 }
 
@@ -176,6 +177,7 @@ impl Settings {
 fn key_name(key: &str) -> String {
     match key {
         "escape" => "Esc".into(),
+        "plus" => "+".into(),
         k if k.chars().count() == 1 => k.to_uppercase(),
         k => k[..1].to_uppercase() + &k[1..],
     }
