@@ -15,6 +15,16 @@ box() {
     ssh "$host" "powershell -NoProfile -ExecutionPolicy Bypass -File $remote\\box.ps1 $*" | tr -d '\r'
 }
 
+# Replaces the box's source with this checkout, keeping its target dir.
+push_source() {
+    tgz=$(mktemp -t annotate-src).tgz
+    COPYFILE_DISABLE=1 tar --exclude=./target --exclude=./.git -czf "$tgz" -C "$repo" .
+    ssh "$host" "New-Item -ItemType Directory -Force $src | Out-Null; Get-ChildItem $src -Exclude target | Remove-Item -Recurse -Force"
+    scp -q "$tgz" "$host:C:/Users/Admin/src/annotate.tgz"
+    rm "$tgz"
+    ssh "$host" "tar -xzf C:\\Users\\Admin\\src\\annotate.tgz -C $src"
+}
+
 run_dir() {
     [[ -f "$verify/current-win" ]] || { echo "no run in progress; start one with win.sh begin" >&2; exit 1; }
     cat "$verify/current-win"
@@ -23,17 +33,17 @@ run_dir() {
 cmd=${1:-}
 shift || true
 case "$cmd" in
+    check)
+        push_source
+        ssh "$host" "cd $src; cargo clippy --release --locked -- -D warnings; exit \$LASTEXITCODE"
+        ;;
     deploy)
-        tgz=$(mktemp -t annotate-src).tgz
-        COPYFILE_DISABLE=1 tar --exclude=./target --exclude=./.git -czf "$tgz" -C "$repo" .
-        ssh "$host" "New-Item -ItemType Directory -Force $src | Out-Null; Get-ChildItem $src -Exclude target | Remove-Item -Recurse -Force"
-        scp -q "$tgz" "$host:C:/Users/Admin/src/annotate.tgz"
-        rm "$tgz"
-        ssh "$host" "tar -xzf C:\\Users\\Admin\\src\\annotate.tgz -C $src; cd $src; cargo build --release --locked; exit \$LASTEXITCODE"
+        push_source
+        ssh "$host" "cd $src; cargo build --release --locked; exit \$LASTEXITCODE"
         box install
         ;;
     launch)
-        box launch
+        box launch "$@"
         ;;
     doctor)
         out=$(box doctor)
@@ -76,7 +86,7 @@ case "$cmd" in
         [[ -f "$verify/current-win" ]] && echo "evidence kept in $(cat "$verify/current-win")" && rm "$verify/current-win"
         ;;
     *)
-        echo "usage: win.sh deploy|launch|doctor|begin|desktop <action>...|fetch|cleanup" >&2
+        echo "usage: win.sh check|deploy|launch [welcome]|doctor|begin|desktop <action>...|fetch|cleanup" >&2
         exit 2
         ;;
 esac

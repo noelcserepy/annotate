@@ -58,6 +58,14 @@ switch ($Action) {
         "installed $((Get-Item $installed).LastWriteTime.ToString('s')) pid $($p.Id)"
     }
     "launch" {
+        # `launch welcome` restarts into the welcome window, the scripted way into Settings.
+        if ($args[0] -eq "welcome") {
+            instance | ForEach-Object { $_.Kill(); $_.WaitForExit() }
+            $settings = "$env:APPDATA\Annotate\settings.json"
+            if (Test-Path $settings) {
+                [IO.File]::WriteAllText($settings, ([IO.File]::ReadAllText($settings) -replace '"welcomed":\s*true', '"welcomed": false'))
+            }
+        }
         if (-not (instance)) { launch }
         $p = instance
         if (-not $p) { "error installed exe did not start"; exit 1 }
@@ -108,7 +116,7 @@ switch ($Action) {
     "cleanup" {
         desktop "settle"
         $state = desktop "state"
-        if ($state -match "^editor \d") {
+        if ($state -match "^editor -?\d") {
             instance | ForEach-Object { $_.Kill(); $_.WaitForExit() }
             launch
             "restarted annotate to close the editor"

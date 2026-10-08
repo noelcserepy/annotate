@@ -53,7 +53,10 @@ case "$cmd" in
         cargo build --release --manifest-path "$repo/Cargo.toml"
         rm -rf "$scratch"
         mkdir -p "$support"
-        printf '{"keys": {"capture": "%s"}, "launch_at_login": false, "welcomed": true}\n' "$hotkey" > "$support/settings.json"
+        # `launch welcome` opens the welcome window, the scripted way into Settings.
+        welcomed=true
+        [[ "${1:-}" == welcome ]] && welcomed=false
+        printf '{"keys": {"capture": "%s"}, "launch_at_login": false, "welcomed": %s}\n' "$hotkey" "$welcomed" > "$support/settings.json"
         swiftc -O "$here/macdrive.swift" -o "$drive"
         dir="$verify/$(date +%Y%m%d-%H%M%S)-mac"
         mkdir -p "$dir/shots"
@@ -150,7 +153,7 @@ case "$cmd" in
         [[ -f "$verify/current-mac" ]] && echo "evidence kept in $(cat "$verify/current-mac")" && rm "$verify/current-mac"
         ;;
     *)
-        echo "usage: mac.sh launch|doctor|state|capture X1 Y1 X2 Y2|key COMBO|type TEXT|click DX DY|drag DX1 DY1 DX2 DY2 [HOLD]|shot NAME [editor]|clipboard|fetch|cleanup" >&2
+        echo "usage: mac.sh launch [welcome]|doctor|state|capture X1 Y1 X2 Y2|key COMBO|type TEXT|click DX DY|drag DX1 DY1 DX2 DY2 [HOLD]|shot NAME [editor]|clipboard|fetch|cleanup" >&2
         exit 2
         ;;
 esac
