@@ -30,6 +30,6 @@ Each feature file has an H1, one paragraph, then the H2s `Sub-features`, `How to
 
 - [Capture](./capture.md) covers the hotkey and tray capture, the region marquee, cancelling, and the editor opening in front.
 - [Annotate](./annotate.md) covers callouts by click or marquee, typing, held A and R tools, selection, delete and undo.
-- [Copy and close](./copy-and-close.md) covers Cmd/Ctrl+C to the clipboard, Esc and Cmd/Ctrl+W closing, the app staying alive, and the save to history.
+- [Copy and close](./copy-and-close.md) covers Cmd/Ctrl+C to the clipboard, Cmd/Ctrl+S to the save folder, Esc and Cmd/Ctrl+W closing, the app staying alive, and the save to history.
 - [History](./history.md) covers recent captures in the tray menu and reopening one with its annotations.
-- [Settings](./settings.md) covers recording a new capture shortcut and the "Open at login" toggle.
+- [Settings](./settings.md) covers the look of new captures with its live preview, recording shortcuts, the save folder and the "Start app on startup" toggle.

@@ -145,10 +145,36 @@ pub struct Doc {
     /// Rectangles without a text box.
     #[serde(default)]
     pub rects: Vec<R>,
+    /// Fixed when the capture is taken, so changing settings never restyles old captures.
+    #[serde(default)]
+    pub style: Style,
 }
 
-/// Visual constants, converted from points to image pixels.
+/// How annotations look. Sizes are in points.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Style {
+    /// Text boxes, lines and rects.
+    pub accent: [u8; 3],
+    /// Text in the boxes.
+    pub ink: [u8; 3],
+    /// Font family.
+    pub font: String,
+    pub text_size: f32,
+    pub line_width: f32,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Self { accent: [0xDC, 0x26, 0x26], ink: [0xFF, 0xFF, 0xFF], font: "Inter".into(), text_size: 15., line_width: 2.5 }
+    }
+}
+
+/// A style's look, converted from points to image pixels.
 pub struct Dims {
+    pub accent: [u8; 3],
+    pub ink: [u8; 3],
+    pub font_family: String,
     pub font: f32,
     pub line: f32,
     pub pad_x: f32,
@@ -167,18 +193,23 @@ pub struct Dims {
 }
 
 impl Dims {
-    pub fn new(scale: f32) -> Self {
+    pub fn new(scale: f32, style: &Style) -> Self {
         let s = scale;
+        // Box padding and width follow the text size; the defaults are 15pt text.
+        let t = style.text_size / 15. * s;
         Self {
-            font: 15. * s,
-            line: 21. * s,
-            pad_x: 10. * s,
-            pad_y: 6. * s,
-            max_text_w: 280. * s,
+            accent: style.accent,
+            ink: style.ink,
+            font_family: style.font.clone(),
+            font: 15. * t,
+            line: 21. * t,
+            pad_x: 10. * t,
+            pad_y: 6. * t,
+            max_text_w: 280. * t,
             min_text_w: 6. * s,
             radius: 6. * s,
-            stroke: 2.5 * s,
-            head: 12. * s,
+            stroke: style.line_width * s,
+            head: (7. + 2. * style.line_width) * s,
             grab: 12. * s,
             gap: 40. * s,
             margin: 14. * s,

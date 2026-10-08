@@ -5,7 +5,7 @@ description: Drive the real Annotate desktop app (tray app, global capture hotke
 
 # Verify Annotate
 
-Annotate is a tray app. A global hotkey starts a region capture (`screencapture -i` on macOS, Snipping Tool on Windows), the capture opens in an editor window, and Cmd/Ctrl+C copies the annotated image and closes the window. Every capture is saved to history.
+Annotate is a tray app. A global hotkey starts a region capture (`screencapture -i` on macOS, Annotate's own overlay over a frozen screenshot on Windows), the capture opens in an editor window, and Cmd/Ctrl+C copies the annotated image and closes the window. Every capture is saved to history.
 
 The harness takes over the real mouse and keyboard. On the Mac that is the machine the user is typing on, so check `user-idle-seconds` in the doctor output first and don't drive while the user is active. Every key and click helper refuses to act unless Annotate is in front, so stray input never lands in another app. Copy-and-close overwrites the system clipboard on the driven machine.
 
@@ -105,7 +105,7 @@ A proof needs:
 
 On Windows, cleanup:
 
-- dismisses a leftover Snipping Tool overlay,
+- dismisses a leftover capture overlay,
 - restarts the installed app only if an editor is still open,
 - deletes history entries created since `begin`,
 - removes `C:\Users\Admin\annotate-verify`.

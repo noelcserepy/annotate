@@ -9,7 +9,6 @@ use tiny_skia::{Color, FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, 
 use crate::doc::{Dims, Doc, End, P, R, Target, separate};
 
 const INTER: &[u8] = include_bytes!("../assets/Inter-SemiBold.ttf");
-const RED: [u8; 3] = [0xDC, 0x26, 0x26];
 
 pub struct Text {
     pub fonts: FontSystem,
@@ -29,15 +28,28 @@ pub fn text() -> MutexGuard<'static, Text> {
     .unwrap()
 }
 
-fn attrs() -> Attrs<'static> {
-    Attrs::new().family(Family::Name("Inter")).weight(Weight::SEMIBOLD)
+/// Font families the user can pick, sorted. Names starting with a dot are macOS system internals.
+pub fn families() -> Vec<String> {
+    let text = text();
+    let names = text.fonts.db().faces().filter_map(|face| face.families.first().map(|(name, _)| name.clone()));
+    let names: std::collections::BTreeSet<String> = names.filter(|name| !name.starts_with('.')).collect();
+    names.into_iter().collect()
+}
+
+/// Semibold, or the family's nearest weight. cosmic-text only shapes with a face of exactly
+/// the asked weight and falls back to another family otherwise.
+fn attrs<'a>(fonts: &FontSystem, family: &'a str) -> Attrs<'a> {
+    let family = Family::Name(family);
+    let query = fontdb::Query { families: &[family], weight: Weight::SEMIBOLD, ..Default::default() };
+    let weight = fonts.db().query(&query).and_then(|id| fonts.db().face(id)).map_or(Weight::SEMIBOLD, |face| face.weight);
+    Attrs::new().family(family).weight(weight)
 }
 
 pub fn text_buffer(fonts: &mut FontSystem, text: &str, d: &Dims) -> Buffer {
     let mut buffer = Buffer::new(fonts, Metrics::new(d.font, d.line));
     buffer.set_wrap(Wrap::WordOrGlyph);
     buffer.set_size(Some(d.max_text_w), None);
-    buffer.set_text(text, &attrs(), Shaping::Advanced, None);
+    buffer.set_text(text, &attrs(fonts, &d.font_family), Shaping::Advanced, None);
     buffer.shape_until_scroll(fonts, false);
     buffer
 }
@@ -154,24 +166,25 @@ pub fn compose(scene: Scene) -> Frame {
             let ring = rounded_rect(b.inflate(d.stroke), d.radius + d.stroke);
             pixmap.fill_path(&ring, &paint([255, 255, 255], 255), FillRule::Winding, t, None);
         }
-        pixmap.fill_path(&rounded_rect(*b, d.radius), &paint(RED, 255), FillRule::Winding, t, None);
+        pixmap.fill_path(&rounded_rect(*b, d.radius), &paint(d.accent, 255), FillRule::Winding, t, None);
 
         let origin = (b.x + d.pad_x - bounds.x, b.y + d.pad_y - bounds.y);
         let mut blit = |x: i32, y: i32, w: u32, h: u32, color: cosmic_text::Color| {
             blend_rect(&mut pixmap, origin.0 as i32 + x, origin.1 as i32 + y, w, h, color.as_rgba());
         };
-        let white = cosmic_text::Color::rgb(255, 255, 255);
+        let [r, g, b] = d.ink;
+        let ink = cosmic_text::Color::rgb(r, g, b);
         match (&mut editing, &mut buffers[i]) {
             (Some((_, editor)), None) => {
                 let clear = cosmic_text::Color::rgba(0, 0, 0, 0);
-                let selection = cosmic_text::Color::rgba(255, 255, 255, 80);
-                editor.draw(fonts, swash, white, clear, selection, white, &mut blit);
+                let selection = cosmic_text::Color::rgba(r, g, b, 80);
+                editor.draw(fonts, swash, ink, clear, selection, ink, &mut blit);
                 if let Some((x, y)) = editor.cursor_position() {
                     let w = (d.stroke * 0.6).round().max(1.) as u32;
-                    blit(x, y + (d.line * 0.12) as i32, w, (d.line * 0.76) as u32, white);
+                    blit(x, y + (d.line * 0.12) as i32, w, (d.line * 0.76) as u32, ink);
                 }
             }
-            (_, Some(buffer)) => buffer.draw(fonts, swash, white, &mut blit),
+            (_, Some(buffer)) => buffer.draw(fonts, swash, ink, &mut blit),
             _ => {}
         }
     }
@@ -186,13 +199,13 @@ fn paint(rgb: [u8; 3], a: u8) -> Paint<'static> {
     p
 }
 
-fn red_stroke(pixmap: &mut Pixmap, t: Transform, path: &tiny_skia::Path, width: f32) {
+fn accent_stroke(pixmap: &mut Pixmap, t: Transform, path: &tiny_skia::Path, width: f32, d: &Dims) {
     let stroke = Stroke { width, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Default::default() };
-    pixmap.stroke_path(path, &paint(RED, 255), &stroke, t, None);
+    pixmap.stroke_path(path, &paint(d.accent, 255), &stroke, t, None);
 }
 
 fn draw_rect(pixmap: &mut Pixmap, t: Transform, r: R, d: &Dims) {
-    red_stroke(pixmap, t, &rounded_rect(r, d.radius * 0.66), d.stroke);
+    accent_stroke(pixmap, t, &rounded_rect(r, d.radius * 0.66), d.stroke, d);
 }
 
 /// A straight line, with an arrowhead at `tip` if `head`. `hot` draws it a little larger, to
@@ -204,7 +217,7 @@ fn draw_line(pixmap: &mut Pixmap, t: Transform, from: P, tip: P, head: bool, d: 
         pb.move_to(from.x, from.y);
         pb.line_to(tip.x, tip.y);
         if let Some(line) = pb.finish() {
-            red_stroke(pixmap, t, &line, d.stroke * k);
+            accent_stroke(pixmap, t, &line, d.stroke * k, d);
         }
         return;
     }
@@ -218,7 +231,7 @@ fn draw_line(pixmap: &mut Pixmap, t: Transform, from: P, tip: P, head: bool, d: 
     pb.move_to(from.x, from.y);
     pb.line_to(shaft_end.x, shaft_end.y);
     if let Some(shaft) = pb.finish() {
-        red_stroke(pixmap, t, &shaft, d.stroke * k);
+        accent_stroke(pixmap, t, &shaft, d.stroke * k, d);
     }
     let mut pb = PathBuilder::new();
     pb.move_to(tip.x, tip.y);
@@ -226,7 +239,7 @@ fn draw_line(pixmap: &mut Pixmap, t: Transform, from: P, tip: P, head: bool, d: 
     pb.line_to(base.x - side.x, base.y - side.y);
     pb.close();
     if let Some(head) = pb.finish() {
-        pixmap.fill_path(&head, &paint(RED, 255), FillRule::Winding, t, None);
+        pixmap.fill_path(&head, &paint(d.accent, 255), FillRule::Winding, t, None);
     }
 }
 

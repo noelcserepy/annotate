@@ -53,7 +53,7 @@ case "$cmd" in
         cargo build --release --manifest-path "$repo/Cargo.toml"
         rm -rf "$scratch"
         mkdir -p "$support"
-        printf '{"hotkey": "%s", "launch_at_login": false}\n' "$hotkey" > "$support/settings.json"
+        printf '{"keys": {"capture": "%s"}, "launch_at_login": false, "welcomed": true}\n' "$hotkey" > "$support/settings.json"
         swiftc -O "$here/macdrive.swift" -o "$drive"
         dir="$verify/$(date +%Y%m%d-%H%M%S)-mac"
         mkdir -p "$dir/shots"
