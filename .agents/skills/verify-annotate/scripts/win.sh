@@ -33,10 +33,6 @@ run_dir() {
 cmd=${1:-}
 shift || true
 case "$cmd" in
-    check)
-        push_source
-        ssh "$host" "cd $src; cargo clippy --release --locked -- -D warnings; exit \$LASTEXITCODE"
-        ;;
     deploy)
         push_source
         ssh "$host" "cd $src; cargo build --release --locked; exit \$LASTEXITCODE"
@@ -86,7 +82,7 @@ case "$cmd" in
         [[ -f "$verify/current-win" ]] && echo "evidence kept in $(cat "$verify/current-win")" && rm "$verify/current-win"
         ;;
     *)
-        echo "usage: win.sh check|deploy|launch [welcome]|doctor|begin|desktop <action>...|fetch|cleanup" >&2
+        echo "usage: win.sh deploy|launch [welcome]|doctor|begin|desktop <action>...|fetch|cleanup" >&2
         exit 2
         ;;
 esac
