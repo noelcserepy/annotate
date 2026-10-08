@@ -3,8 +3,8 @@
 use gpui::Window;
 use objc2::{MainThreadMarker, rc::Retained};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBitmapImageRep, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeTIFF, NSView,
-    NSWindow,
+    NSApplication, NSApplicationActivationPolicy, NSBitmapImageRep, NSEventModifierFlags, NSPasteboard, NSPasteboardTypePNG,
+    NSPasteboardTypeTIFF, NSView, NSWindow,
 };
 use objc2_foundation::{NSData, NSPoint, NSRect, NSSize};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -13,6 +13,17 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 pub fn hide_dock_icon() {
     let mtm = MainThreadMarker::new().unwrap();
     NSApplication::sharedApplication(mtm).setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+}
+
+/// The key event being handled, as the global-hotkey name of the key's position and whether
+/// shift is held.
+pub fn current_key() -> Option<(&'static str, bool)> {
+    let event = NSApplication::sharedApplication(MainThreadMarker::new()?).currentEvent()?;
+    // Key positions by kVK_ANSI_* code from 0x00, named as on a US keyboard. "_" leaves the key to GPUI.
+    const ANSI: &str = "asdfhgzxcv_bqweryt123465=97-80]ou[ip_lj'k;\\,/nm.__`";
+    let code = event.keyCode() as usize;
+    let key = ANSI.get(code..code + 1).filter(|k| *k != "_")?;
+    Some((key, event.modifierFlags().contains(NSEventModifierFlags::Shift)))
 }
 
 pub fn ns_window(window: &Window) -> Option<Retained<NSWindow>> {

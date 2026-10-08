@@ -123,7 +123,7 @@ impl Shortcut {
     /// The combo `k` sets this shortcut to, if it can be one.
     fn accept(self, k: &Keystroke) -> Option<String> {
         let m = &k.modifiers;
-        let keys = combo(k);
+        let keys = if self == Shortcut::Capture { capture_combo(k) } else { combo(k) };
         let ok = match self {
             // A global shortcut without a modifier would swallow that key in every app.
             Shortcut::Capture => (m.control || m.alt || m.platform) && keys.parse::<global_hotkey::hotkey::HotKey>().is_ok(),
@@ -141,6 +141,20 @@ pub fn combo(k: &Keystroke) -> String {
     let mut parts: Vec<&str> = mods.into_iter().filter(|(on, _)| *on).map(|(_, name)| name).collect();
     parts.push(&k.key);
     parts.join("+")
+}
+
+/// global-hotkey registers the key at a position on the keyboard. GPUI's macOS key is the
+/// character instead, with shift folded in, so cmd+shift+4 arrives as cmd+$.
+#[cfg(target_os = "macos")]
+fn capture_combo(k: &Keystroke) -> String {
+    let Some((key, shift)) = crate::mac::current_key() else { return combo(k) };
+    let modifiers = gpui::Modifiers { shift, ..k.modifiers };
+    combo(&Keystroke { modifiers, key: key.into(), key_char: None })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn capture_combo(k: &Keystroke) -> String {
+    combo(k)
 }
 
 fn path() -> PathBuf {

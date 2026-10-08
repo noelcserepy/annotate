@@ -21,7 +21,7 @@ A window from the tray menu's `Settings…` item, or the welcome window's `Custo
 
 Preconditions:
 
-- A person has opened `Settings…` from the tray, because the harness can't open tray menus, and will close it again.
+- Settings is open. The harness can't open tray menus, so either a person opens `Settings…` from the tray, or you set `"welcomed": false` in `settings.json`, restart the instance and `<sh> click` `Customize…` in the welcome window.
 
 - **Current shortcut.** Open the Shortcuts tab with `<sh> click` on the tab row, then `<sh> shot settings`. Capture shows `⌃⌥⇧9` on the private mac instance and `Ctrl+Shift+4` on Windows.
 - **Record.** Run `<sh> click` on the Capture field, using offsets from the window center (it sits right of center on the first row), then `<sh> key ctrl+alt+8`. The field shows the new combo, and `settings.json` holds `"capture": "ctrl+alt+8"` under `keys`.
@@ -33,4 +33,6 @@ Preconditions:
 - Changing settings on Windows changes the user's real ones. Record the original `settings.json` first and restore it before cleanup.
 - The editor helpers take the first visible Annotate window. With settings open, that may be the settings window.
 - "Start app on startup" does nothing for the bare binary that `mac.sh` runs, so on the Mac a toggle that turns red proves only the UI. On Windows, check the registry with `ssh win-dev reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Annotate`.
+- macOS keeps `cmd+shift+3`, `4` and `5` for its own screenshots, so recording them opens the system tool instead.
+- The capture shortcut stores key positions as named on a US keyboard. On the Mac, `ctrl+alt+z` on a QWERTZ layout saves as `ctrl+alt+y`.
 - GPUI has no slider, text field or colour picker. Sizes use −/+ steppers, colours are fixed swatches, and the font search reads raw key presses.
