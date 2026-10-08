@@ -60,7 +60,8 @@ enum Tool {
 }
 
 impl Tool {
-    fn for_key(key: &str, keys: &Keys) -> Option<Self> {
+    fn for_key(k: &gpui::Keystroke, keys: &Keys) -> Option<Self> {
+        let key = settings::combo(k);
         if key == keys.arrow {
             Some(Tool::Arrow)
         } else if key == keys.rect {
@@ -864,11 +865,11 @@ impl Editor {
             ("escape", Mode::Selected(_)) => self.mode = Mode::Idle,
             ("backspace" | "delete", Mode::Selected(i)) => self.delete(*i),
             (_, Mode::Editing { .. }) => self.type_key(event),
-            (key, _) if !m.modified() && Tool::for_key(key, &keys).is_some() => {
+            _ if !m.modified() && Tool::for_key(k, &keys).is_some() => {
                 if event.is_held {
                     return;
                 }
-                self.tool = Tool::for_key(key, &keys);
+                self.tool = Tool::for_key(k, &keys);
             }
             (_, Mode::Selected(i)) if k.key_char.is_some() && !m.control => {
                 let i = *i;
@@ -883,7 +884,7 @@ impl Editor {
 
     fn key_up(&mut self, event: &KeyUpEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keys = &cx.global::<AppState>().settings.keys;
-        if self.tool.is_some() && self.tool == Tool::for_key(&event.keystroke.key, keys) {
+        if self.tool.is_some() && self.tool == Tool::for_key(&event.keystroke, keys) {
             self.tool = None;
             self.refresh(window, cx);
         }
