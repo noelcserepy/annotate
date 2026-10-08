@@ -21,7 +21,7 @@ A window from the tray menu's `Settings…` item, or the welcome window's `Custo
 
 Preconditions:
 
-- Settings is open. The harness can't open tray menus, so either a person opens `Settings…` from the tray, or you set `"welcomed": false` in `settings.json`, restart the instance and `<sh> click` `Customize…` in the welcome window.
+- Settings is open. The harness can't open tray menus, so start the instance with `<sh> launch welcome` (on the Mac, after `mac.sh cleanup`). It opens the welcome window. Then `<sh> click` `Customize…`.
 
 - **Current shortcut.** Open the Shortcuts tab with `<sh> click` on the tab row, then `<sh> shot settings`. Capture shows `⌃⌥⇧9` on the private mac instance and `Ctrl+Shift+4` on Windows.
 - **Record.** Run `<sh> click` on the Capture field, using offsets from the window center (it sits right of center on the first row), then `<sh> key ctrl+alt+8`. The field shows the new combo, and `settings.json` holds `"capture": "ctrl+alt+8"` under `keys`.

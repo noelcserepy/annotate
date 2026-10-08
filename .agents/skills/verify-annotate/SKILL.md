@@ -37,6 +37,8 @@ Windows. There is one instance: the user's own install at `%LOCALAPPDATA%\Progra
 
 `deploy` ends with `installed <time> pid N`. `begin` refuses while another run is open.
 
+`launch welcome` on either OS starts the app with its welcome window open. That window's `Customize…` button is the only scripted way into Settings.
+
 ## Doctor
 
 Read-only. Run it first, and again whenever something looks off.
