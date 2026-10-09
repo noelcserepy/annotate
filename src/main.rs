@@ -115,6 +115,12 @@ fn capture(cx: &mut App) {
     }
     state.capturing = true;
     let style = state.settings.style.clone();
+    // Activating the app brings all of its windows forward, so close the ones a capture has no use for.
+    for window in cx.windows() {
+        if window.downcast::<welcome::Welcome>().is_some() || window.downcast::<SettingsView>().is_some() {
+            window.update(cx, |_, window, _| window.remove_window()).ok();
+        }
+    }
     // macOS only lets us take focus right after the user's key press. Take it now, so
     // focus comes back to us when screencapture exits and the editor opens in front.
     cx.activate(true);
@@ -157,13 +163,7 @@ pub fn open_settings(cx: &mut App) {
     let handle = cx.open_window(options, |window, cx| {
         // Windows opens new windows behind the app in front.
         window.activate_window();
-        let view = cx.new(|cx| SettingsView::new(window, cx));
-        // Never leave the shortcut disabled because the window closed mid-recording.
-        window.on_window_should_close(cx, |_, cx| {
-            AppState::set_hotkey_enabled(true, cx);
-            true
-        });
-        view
+        cx.new(|cx| SettingsView::new(window, cx))
     });
     cx.global_mut::<AppState>().settings_window = handle.ok();
 }
