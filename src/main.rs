@@ -163,13 +163,7 @@ pub fn open_settings(cx: &mut App) {
     let handle = cx.open_window(options, |window, cx| {
         // Windows opens new windows behind the app in front.
         window.activate_window();
-        let view = cx.new(|cx| SettingsView::new(window, cx));
-        // Never leave the shortcut disabled because the window closed mid-recording.
-        window.on_window_should_close(cx, |_, cx| {
-            AppState::set_hotkey_enabled(true, cx);
-            true
-        });
-        view
+        cx.new(|cx| SettingsView::new(window, cx))
     });
     cx.global_mut::<AppState>().settings_window = handle.ok();
 }

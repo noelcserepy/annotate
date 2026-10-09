@@ -269,6 +269,8 @@ impl SettingsView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         window.focus(&focus);
+        // However the window closes, never leave the shortcut disabled mid-recording.
+        cx.on_release(|_, cx| AppState::set_hotkey_enabled(true, cx)).detach();
         Self { focus, tab: Tab::Appearance, recording: None, font_search: None, families: render::families(), preview: None }
     }
 
