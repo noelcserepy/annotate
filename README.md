@@ -1,8 +1,29 @@
+<div align="center">
+
+<img src="assets/annotate-logo.svg" width="96" alt="">
+
 # Annotate
 
-Take a screenshot, click to add notes, copy it. For macOS and Windows.
+**Take a screenshot, click to add notes, copy it.**<br>
+Lives in the menu bar on macOS and the system tray on Windows.<br>
+Free and offline. No account, nothing uploaded.
 
-<!-- TODO: demo GIF: capture, click twice, type, Cmd+C, paste into Slack -->
+[![Rust](https://img.shields.io/badge/100%25-Rust-b7410e?logo=rust&logoColor=white)](Cargo.toml)
+[![Platforms](https://img.shields.io/badge/macOS%20·%20Windows-native-2563eb)](#install)
+[![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/noelcserepy/annotate?color=16a34a)](https://github.com/noelcserepy/annotate/releases/latest)
+
+[![Download](https://img.shields.io/badge/Download-for%20macOS%20and%20Windows-DC2626?style=for-the-badge)](https://github.com/noelcserepy/annotate/releases/latest)
+
+[Install](#install) · [Keys](#keys) · [Report a bug](https://github.com/noelcserepy/annotate/issues)
+
+<br>
+
+<img src="assets/demo.webp" width="800" alt="Capturing part of a web page, clicking to add a callout, and typing a note">
+
+</div>
+
+## How it works
 
 1. Press Cmd+Shift+4 (Ctrl+Shift+4 on Windows) and drag over part of the screen.
 2. Click where you want a note.
