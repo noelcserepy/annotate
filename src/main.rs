@@ -115,6 +115,12 @@ fn capture(cx: &mut App) {
     }
     state.capturing = true;
     let style = state.settings.style.clone();
+    // Activating the app brings all of its windows forward, so close the ones a capture has no use for.
+    for window in cx.windows() {
+        if window.downcast::<welcome::Welcome>().is_some() || window.downcast::<SettingsView>().is_some() {
+            window.update(cx, |_, window, _| window.remove_window()).ok();
+        }
+    }
     // macOS only lets us take focus right after the user's key press. Take it now, so
     // focus comes back to us when screencapture exits and the editor opens in front.
     cx.activate(true);

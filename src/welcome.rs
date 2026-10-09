@@ -21,7 +21,7 @@ pub fn open(cx: &mut App) {
     .ok();
 }
 
-struct Welcome;
+pub struct Welcome;
 
 impl Render for Welcome {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
