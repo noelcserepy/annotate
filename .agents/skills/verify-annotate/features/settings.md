@@ -16,12 +16,13 @@ A window from the tray menu's `Settings…` item, or the welcome window's `Custo
 
 - Click the tray icon and choose `Settings…`.
 - On first launch, click `Customize…` in the welcome window.
+- On the Mac, open Annotate.app while it runs with no window up, for when the tray icon is hidden. With a window up, macOS only brings that window forward.
 
 ## Driving it with mac.sh / win.sh
 
 Preconditions:
 
-- Settings is open. The harness can't open tray menus, so start the instance with `<sh> launch welcome` (on the Mac, after `mac.sh cleanup`). It opens the welcome window. Then `<sh> click` `Customize…`.
+- Settings is open. The harness can't open tray menus. On the Mac, run `mac.sh reopen`. On Windows, start the instance with `win.sh launch welcome`, which opens the welcome window, then `win.sh desktop click` `Customize…`.
 
 - **Current shortcut.** Open the Shortcuts tab with `<sh> click` on the tab row, then `<sh> shot settings`. Capture shows `⌃⌥⇧9` on the private mac instance and `Ctrl+Shift+4` on Windows.
 - **Record.** Run `<sh> click` on the Capture field, using offsets from the window center (it sits right of center on the first row), then `<sh> key ctrl+alt+8`. The field shows the new combo, and `settings.json` holds `"capture": "ctrl+alt+8"` under `keys`.
@@ -32,7 +33,7 @@ Preconditions:
 
 - Changing settings on Windows changes the user's real ones. Record the original `settings.json` first and restore it before cleanup.
 - The editor helpers take the first visible Annotate window. With settings open, that may be the settings window.
-- "Start app on startup" does nothing for the bare binary that `mac.sh` runs, so on the Mac a toggle that turns red proves only the UI. On Windows, check the registry with `ssh win-dev reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Annotate`.
+- On the Mac, "Start app on startup" registers a login item for `AnnotateVerify.app` inside the checkout. Turn it off again before cleanup. On Windows, check the registry with `ssh win-dev reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Annotate`.
 - macOS keeps `cmd+shift+3`, `4` and `5` for its own screenshots, so recording them opens the system tool instead.
 - The capture shortcut stores key positions as named on a US keyboard. On the Mac, `ctrl+alt+z` on a QWERTZ layout saves as `ctrl+alt+y`.
 - GPUI has no slider, text field or colour picker. Sizes use −/+ steppers, colours are fixed swatches, and the font search reads raw key presses.

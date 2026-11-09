@@ -25,7 +25,7 @@ macOS. A private instance from this checkout, with its own `HOME` and the hotkey
 .agents/skills/verify-annotate/scripts/mac.sh launch
 ```
 
-It builds `target/release/annotate`, starts it, and is ready when it prints `annotate pid N hotkey ctrl+alt+shift+9`. An `error` line means the instance died or the hotkey didn't register; `app.log` in the evidence dir has stderr. One mac run at a time.
+It builds `target/release/annotate`, wraps it in `target/verify/AnnotateVerify.app` with the bundle ID `com.noelcserepy.annotate.verify`, starts it, and is ready when it prints `annotate pid N hotkey ctrl+alt+shift+9`. An `error` line means the instance died or the hotkey didn't register; `app.log` in the evidence dir has stderr. One mac run at a time.
 
 Windows. There is one instance: the user's own install at `%LOCALAPPDATA%\Programs\Annotate\annotate.exe` on `win-dev` (override with `WIN_HOST`). Windows can't isolate it, so a run uses the user's real settings and history, and cleanup deletes exactly the history entries the run created.
 
@@ -37,7 +37,9 @@ Windows. There is one instance: the user's own install at `%LOCALAPPDATA%\Progra
 
 `deploy` ends with `installed <time> pid N`. `begin` refuses while another run is open.
 
-`launch welcome` on either OS starts the app with its welcome window open. That window's `Customize…` button is the only scripted way into Settings.
+Never run a bare `target/release/annotate` on the Mac. Control Centre keys menu bar icons by bundle ID and process name, and a bare binary named `annotate` once took over the installed app's record and hid its icon.
+
+`launch welcome` on either OS starts the app with its welcome window open, and its `Customize…` button opens Settings. On the Mac, with no Annotate window open, `mac.sh reopen` opens Settings directly, the way double-clicking a running Annotate.app does.
 
 ## Doctor
 
@@ -58,6 +60,7 @@ Every line starting `FAIL` must be fixed before driving. It names the fix, usual
 
 The verbs are the same on both OSes. On the Mac, call `mac.sh <verb>`. On Windows, call `win.sh desktop <verb>`, which runs `scripts/drive.ps1` on the box's desktop through a one-shot scheduled task, because an ssh session can't see the desktop.
 
+- `reopen` (Mac only) opens the running app again, which opens Settings when no window is up, and prints a `window X Y W H` line for each of the instance's windows.
 - `capture X1 Y1 X2 Y2` presses the hotkey, waits for the capture overlay and drags a marquee in screen coordinates. Units are points on the Mac and pixels on Windows. It prints the editor rect and the front app.
 - `key COMBO` presses keys like `escape`, `ctrl+c`, `cmd+z` or `backspace`. Use `ctrl+` on Windows and `cmd+` on the Mac.
 - `type WORDS...` types plain text into the active callout. Avoid shell or PowerShell metacharacters.
@@ -119,6 +122,7 @@ Run cleanup after failed attempts too. Both print where the evidence was kept.
 All of these live in `scripts/`.
 
 - `mac.sh` is the macOS entry point. It compiles `macdrive.swift` into the scratch dir on launch.
+- `mac-selftest.sh` checks `mac.sh` itself: the bundle ID, `reopen` showing one Settings window, `launch` refusing while an instance runs, and `verify_app` counting only a verify app as the instance. Run it after changing `mac.sh`.
 - `macdrive.swift` posts CGEvent keys and mouse events and reads CGWindowList and NSPasteboard. It runs as `$TMPDIR/annotate-verify/macdrive front|windows PID|key COMBO|type TEXT|click X Y|drag X1 Y1 X2 Y2 [HOLD]|clipboard DIR`.
 - `win.sh` is the Windows entry point. It copies `box.ps1` and `drive.ps1` to the box before each call.
 - `box.ps1` runs in the ssh session and handles install, launch, doctor, begin, history, cleanup, and handing desktop jobs to `drive.ps1`.
