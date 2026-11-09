@@ -5,7 +5,10 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
 verify="$repo/target/verify"
-bin="$repo/target/release/annotate"
+# Its own bundle ID, so macOS never confuses a verify run with the installed app, whose
+# Control Centre record a bare `annotate` binary once took over and hid its menu bar icon.
+app="$verify/AnnotateVerify.app"
+bin="$app/Contents/MacOS/annotate"
 # Throwaway HOME, so settings and history never touch the user's own Annotate.
 scratch="${TMPDIR:-/tmp}/annotate-verify"
 support="$scratch/home/Library/Application Support/Annotate"
@@ -51,9 +54,16 @@ case "$cmd" in
             exit 1
         fi
         cargo build --release --manifest-path "$repo/Cargo.toml"
+        rm -rf "$app"
+        mkdir -p "$app/Contents/MacOS"
+        cp "$repo/target/release/annotate" "$bin"
+        cp "$repo/Info.plist" "$app/Contents/Info.plist"
+        plutil -replace CFBundleIdentifier -string com.noelcserepy.annotate.verify "$app/Contents/Info.plist"
+        plutil -replace CFBundleName -string "Annotate Verify" "$app/Contents/Info.plist"
+        codesign --force --sign - "$app"
         rm -rf "$scratch"
         mkdir -p "$support"
-        # `launch welcome` opens the welcome window, the scripted way into Settings.
+        # `launch welcome` opens the welcome window.
         welcomed=true
         [[ "${1:-}" == welcome ]] && welcomed=false
         printf '{"keys": {"capture": "%s"}, "launch_at_login": false, "welcomed": %s}\n' "$hotkey" "$welcomed" > "$support/settings.json"
@@ -95,6 +105,14 @@ case "$cmd" in
         sleep 0.5
         echo "editor $(editor)"
         echo "front $(front)"
+        ;;
+    # Opens the app again, as double-clicking it would, which opens Settings.
+    # Refuses without a live instance, since `open` would start one with the user's real HOME.
+    reopen)
+        kill -0 "$(pid)" 2>/dev/null || { echo "error annotate $(pid) is not running"; exit 1; }
+        open "$app"
+        sleep 1
+        "$drive" windows "$(pid)" | sed 's/^/window /'
         ;;
     key)
         require_front
@@ -153,7 +171,7 @@ case "$cmd" in
         [[ -f "$verify/current-mac" ]] && echo "evidence kept in $(cat "$verify/current-mac")" && rm "$verify/current-mac"
         ;;
     *)
-        echo "usage: mac.sh launch [welcome]|doctor|state|capture X1 Y1 X2 Y2|key COMBO|type TEXT|click DX DY|drag DX1 DY1 DX2 DY2 [HOLD]|shot NAME [editor]|clipboard|fetch|cleanup" >&2
+        echo "usage: mac.sh launch [welcome]|doctor|state|capture X1 Y1 X2 Y2|reopen|key COMBO|type TEXT|click DX DY|drag DX1 DY1 DX2 DY2 [HOLD]|shot NAME [editor]|clipboard|fetch|cleanup" >&2
         exit 2
         ;;
 esac
