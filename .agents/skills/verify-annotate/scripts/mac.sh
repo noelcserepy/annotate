@@ -21,8 +21,13 @@ run_dir() {
     cat "$verify/current-mac"
 }
 pid() { cat "$scratch/pid"; }
-# Our instance is up: the recorded pid is alive and runs this checkout's verify app, not a process that reused the pid.
-running() { [[ -f "$scratch/pid" ]] && [[ "$(ps -o comm= -p "$(pid)" 2>/dev/null)" == "$bin" ]]; }
+# The bundle of the verify app running under the recorded pid. Any checkout's counts, since
+# all share one scratch dir. Fails when the pid is dead or reused by another process.
+instance() {
+    local exe
+    [[ -f "$scratch/pid" ]] && exe=$(ps -o comm= -p "$(pid)") || return 1
+    [[ "$exe" == */AnnotateVerify.app/Contents/MacOS/annotate ]] && echo "${exe%/Contents/MacOS/annotate}"
+}
 editor() { "$drive" windows "$(pid)" | head -1; }
 front() { local p; p=$("$drive" front); echo "$p $(basename "$(ps -o comm= -p "$p")")"; }
 # Keys go to whatever is in front. Refuse unless that is our instance.
@@ -51,7 +56,7 @@ if [[ ! "$cmd" =~ ^(launch|doctor|cleanup)$ ]]; then
 fi
 case "$cmd" in
     launch)
-        if running; then
+        if instance >/dev/null; then
             echo "error instance $(pid) from an earlier run is still up; run mac.sh cleanup" >&2
             exit 1
         fi
@@ -83,7 +88,9 @@ case "$cmd" in
         ;;
     doctor)
         run_dir >/dev/null
-        if running; then echo "ok annotate pid $(pid) runs $bin"; else echo "FAIL pid $(pid) is not a running $bin"; fi
+        if ! instance >/dev/null; then echo "FAIL pid $(pid) is not a running verify app"
+        elif [[ "$(instance)" != "$app" ]]; then echo "FAIL pid $(pid) runs $(instance), not $app"
+        else echo "ok annotate pid $(pid) runs $bin"; fi
         stale=$(cd "$repo" && find src build.rs Cargo.toml Cargo.lock assets -newer "$bin" | head -3)
         if [[ -n "$stale" ]]; then echo "FAIL source changed after the build ($stale); mac.sh cleanup, then launch"; else echo "ok build is newer than the source"; fi
         if grep -q '^register' "$(run_dir)/app.log"; then echo "FAIL hotkey not registered"; else echo "ok hotkey $hotkey"; fi
@@ -107,10 +114,10 @@ case "$cmd" in
         echo "front $(front)"
         ;;
     # Opens the app again, as double-clicking it would. With no window up, that opens Settings.
-    # Refuses without a live instance, since `open` would start one with the user's real HOME.
+    # Opens the running instance's own bundle; any other path could start a second one with the user's real HOME.
     reopen)
-        running || { echo "error annotate $(pid) is not running"; exit 1; }
-        open "$app"
+        running_app=$(instance) || { echo "error annotate $(pid) is not running"; exit 1; }
+        open "$running_app"
         sleep 1
         "$drive" windows "$(pid)" | sed 's/^/window /'
         ;;
@@ -162,13 +169,16 @@ case "$cmd" in
         echo "evidence $dir"
         ;;
     cleanup)
-        if running; then
+        if instance >/dev/null; then
             kill "$(pid)"
             while kill -0 "$(pid)" 2>/dev/null; do sleep 0.2; done
             echo "stopped annotate $(pid)"
         fi
         rm -rf "$scratch"
-        [[ -f "$verify/current-mac" ]] && echo "evidence kept in $(cat "$verify/current-mac")" && rm "$verify/current-mac"
+        if [[ -f "$verify/current-mac" ]]; then
+            echo "evidence kept in $(cat "$verify/current-mac")"
+            rm "$verify/current-mac"
+        fi
         ;;
     *)
         echo "usage: mac.sh launch [welcome]|doctor|state|capture X1 Y1 X2 Y2|reopen|key COMBO|type TEXT|click DX DY|drag DX1 DY1 DX2 DY2 [HOLD]|shot NAME [editor]|clipboard|fetch|cleanup" >&2
