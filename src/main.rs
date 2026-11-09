@@ -173,6 +173,7 @@ fn main() {
 
     let app = Application::new();
     // The tray icon can be hidden (by the notch, or the Menu Bar setting), so opening the app again opens Settings.
+    // GPUI calls this only while no window is up; otherwise macOS brings the open window forward.
     app.on_reopen(open_settings);
     app.run(|cx| {
         #[cfg(target_os = "macos")]

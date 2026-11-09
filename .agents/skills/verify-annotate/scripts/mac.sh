@@ -21,6 +21,8 @@ run_dir() {
     cat "$verify/current-mac"
 }
 pid() { cat "$scratch/pid"; }
+# Our instance is up: the recorded pid is alive and runs this checkout's verify app, not a process that reused the pid.
+running() { [[ -f "$scratch/pid" ]] && [[ "$(ps -o comm= -p "$(pid)" 2>/dev/null)" == "$bin" ]]; }
 editor() { "$drive" windows "$(pid)" | head -1; }
 front() { local p; p=$("$drive" front); echo "$p $(basename "$(ps -o comm= -p "$p")")"; }
 # Keys go to whatever is in front. Refuse unless that is our instance.
@@ -49,7 +51,7 @@ if [[ ! "$cmd" =~ ^(launch|doctor|cleanup)$ ]]; then
 fi
 case "$cmd" in
     launch)
-        if [[ -f "$scratch/pid" ]] && kill -0 "$(pid)" 2>/dev/null; then
+        if running; then
             echo "error instance $(pid) from an earlier run is still up; run mac.sh cleanup" >&2
             exit 1
         fi
@@ -81,9 +83,7 @@ case "$cmd" in
         ;;
     doctor)
         run_dir >/dev/null
-        if ! kill -0 "$(pid)" 2>/dev/null; then echo "FAIL annotate $(pid) is not running"
-        elif [[ "$(ps -o comm= -p "$(pid)")" != "$bin" ]]; then echo "FAIL pid $(pid) is not $bin"
-        else echo "ok annotate pid $(pid) runs $bin"; fi
+        if running; then echo "ok annotate pid $(pid) runs $bin"; else echo "FAIL pid $(pid) is not a running $bin"; fi
         stale=$(cd "$repo" && find src build.rs Cargo.toml Cargo.lock assets -newer "$bin" | head -3)
         if [[ -n "$stale" ]]; then echo "FAIL source changed after the build ($stale); mac.sh cleanup, then launch"; else echo "ok build is newer than the source"; fi
         if grep -q '^register' "$(run_dir)/app.log"; then echo "FAIL hotkey not registered"; else echo "ok hotkey $hotkey"; fi
@@ -106,10 +106,10 @@ case "$cmd" in
         echo "editor $(editor)"
         echo "front $(front)"
         ;;
-    # Opens the app again, as double-clicking it would, which opens Settings.
+    # Opens the app again, as double-clicking it would. With no window up, that opens Settings.
     # Refuses without a live instance, since `open` would start one with the user's real HOME.
     reopen)
-        kill -0 "$(pid)" 2>/dev/null || { echo "error annotate $(pid) is not running"; exit 1; }
+        running || { echo "error annotate $(pid) is not running"; exit 1; }
         open "$app"
         sleep 1
         "$drive" windows "$(pid)" | sed 's/^/window /'
@@ -162,7 +162,7 @@ case "$cmd" in
         echo "evidence $dir"
         ;;
     cleanup)
-        if [[ -f "$scratch/pid" ]] && kill -0 "$(pid)" 2>/dev/null; then
+        if running; then
             kill "$(pid)"
             while kill -0 "$(pid)" 2>/dev/null; do sleep 0.2; done
             echo "stopped annotate $(pid)"

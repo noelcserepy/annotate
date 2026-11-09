@@ -16,7 +16,7 @@ A window from the tray menu's `Settings…` item, or the welcome window's `Custo
 
 - Click the tray icon and choose `Settings…`.
 - On first launch, click `Customize…` in the welcome window.
-- On the Mac, open Annotate.app while it runs, for when the tray icon is hidden.
+- On the Mac, open Annotate.app while it runs with no window up, for when the tray icon is hidden. With a window up, macOS only brings that window forward.
 
 ## Driving it with mac.sh / win.sh
 
