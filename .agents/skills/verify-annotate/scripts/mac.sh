@@ -21,13 +21,15 @@ run_dir() {
     cat "$verify/current-mac"
 }
 pid() { cat "$scratch/pid"; }
-# The bundle of the verify app running under the recorded pid. Any checkout's counts, since
-# all share one scratch dir. Fails when the pid is dead or reused by another process.
-instance() {
+# verify_app PID: the bundle of the verify app running as PID. Any checkout's counts, since all
+# share one scratch dir. Fails when PID is dead or belongs to another process.
+verify_app() {
     local exe
-    [[ -f "$scratch/pid" ]] && exe=$(ps -o comm= -p "$(pid)") || return 1
+    exe=$(ps -o comm= -p "$1") || return 1
     [[ "$exe" == */AnnotateVerify.app/Contents/MacOS/annotate ]] && echo "${exe%/Contents/MacOS/annotate}"
 }
+# The recorded instance's bundle, if it is still up.
+instance() { [[ -f "$scratch/pid" ]] && verify_app "$(pid)"; }
 editor() { "$drive" windows "$(pid)" | head -1; }
 front() { local p; p=$("$drive" front); echo "$p $(basename "$(ps -o comm= -p "$p")")"; }
 # Keys go to whatever is in front. Refuse unless that is our instance.
@@ -46,6 +48,9 @@ state() {
     local r; r=$(editor || true)
     echo "editor ${r:-none}"
 }
+
+# Sourced (by mac-selftest.sh), only define the functions above.
+[[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 
 cmd=${1:-}
 shift || true

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Checks mac.sh's own guarantees: the verify instance has its own bundle ID, reopening it
-# opens one Settings window, a pid reused by another process is never opened or killed, and
-# another checkout's live instance is never wiped by a launch.
+# Checks mac.sh's own guarantees: the verify instance has its own bundle ID, reopening it opens
+# one Settings window, only a verify app from some checkout counts as the instance, and a launch
+# never replaces a live one.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 mac="$here/mac.sh"
-# mac.sh's pid record. Writing it is the only way to stage a reused pid or another checkout's instance.
-pidfile="${TMPDIR:-/tmp}/annotate-verify/pid"
+source "$mac"
 fail() { echo "FAIL $*"; exit 1; }
 
 out=$("$mac" launch)
@@ -24,26 +23,25 @@ for _ in 1 2; do
 done
 echo "ok reopen shows one Settings window, twice"
 
-sleep 60 & other=$!
-echo "$other" > "$pidfile"
-if "$mac" reopen >/dev/null; then fail "reopen accepted pid $other, which is not annotate"; fi
-echo "ok reopen refuses a reused pid"
-"$mac" cleanup >/dev/null
-kill -0 "$other" || fail "cleanup killed pid $other, which is not annotate"
-kill "$other" "$real"; wait "$other" 2>/dev/null || true
-echo "ok cleanup leaves a reused pid alone"
+if "$mac" launch >/dev/null 2>&1; then fail "a second launch went ahead while $real ran"; fi
+echo "ok launch refuses while an instance runs"
 
-# A live verify app from another checkout, stood in for by sleep at that bundle path.
+[[ "$(verify_app "$real")" == "$app" ]] || fail "verify_app $real is not $app"
+sleep 60 & other=$!
+if verify_app "$other" >/dev/null; then fail "verify_app accepted pid $other, which is not annotate"; fi
+# Another checkout's instance, stood in for by a signed copy of sleep at that bundle path.
 elsewhere=$(mktemp -d)
 mkdir -p "$elsewhere/AnnotateVerify.app/Contents/MacOS"
 cp /bin/sleep "$elsewhere/AnnotateVerify.app/Contents/MacOS/annotate"
 codesign --force --sign - "$elsewhere/AnnotateVerify.app/Contents/MacOS/annotate" 2>/dev/null
 "$elsewhere/AnnotateVerify.app/Contents/MacOS/annotate" 60 & foreign=$!
-mkdir -p "$(dirname "$pidfile")"
-echo "$foreign" > "$pidfile"
-if "$mac" launch >/dev/null 2>&1; then fail "launch went ahead while another checkout's instance ran"; fi
-echo "ok launch refuses while another checkout's instance runs"
-"$mac" cleanup >/dev/null
-if kill -0 "$foreign" 2>/dev/null; then fail "cleanup left another checkout's instance running"; fi
+found=$(verify_app "$foreign") || true
+kill "$other" "$foreign"
+wait "$other" "$foreign" 2>/dev/null || true
 rm -rf "$elsewhere"
-echo "ok cleanup stops another checkout's instance"
+[[ "$found" == "$elsewhere/AnnotateVerify.app" ]] || fail "verify_app missed another checkout's instance, got: $found"
+echo "ok only a verify app from some checkout counts as the instance"
+
+"$mac" cleanup >/dev/null
+if kill -0 "$real" 2>/dev/null; then fail "cleanup left $real running"; fi
+echo "ok cleanup stops the instance"

@@ -122,7 +122,7 @@ Run cleanup after failed attempts too. Both print where the evidence was kept.
 All of these live in `scripts/`.
 
 - `mac.sh` is the macOS entry point. It compiles `macdrive.swift` into the scratch dir on launch.
-- `mac-selftest.sh` checks `mac.sh` itself: the bundle ID, `reopen` showing one Settings window, and a reused pid never being opened or killed. Run it after changing `mac.sh`.
+- `mac-selftest.sh` checks `mac.sh` itself: the bundle ID, `reopen` showing one Settings window, `launch` refusing while an instance runs, and `verify_app` counting only a verify app as the instance. Run it after changing `mac.sh`.
 - `macdrive.swift` posts CGEvent keys and mouse events and reads CGWindowList and NSPasteboard. It runs as `$TMPDIR/annotate-verify/macdrive front|windows PID|key COMBO|type TEXT|click X Y|drag X1 Y1 X2 Y2 [HOLD]|clipboard DIR`.
 - `win.sh` is the Windows entry point. It copies `box.ps1` and `drive.ps1` to the box before each call.
 - `box.ps1` runs in the ssh session and handles install, launch, doctor, begin, history, cleanup, and handing desktop jobs to `drive.ps1`.
