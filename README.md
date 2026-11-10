@@ -82,7 +82,7 @@ Linux isn't supported.
 
 You need Rust 1.90 or newer.
 
-On macOS you also need the Xcode command line tools (`xcode-select --install`). `scripts/bundle.sh install` builds `Annotate.app`, moves it to /Applications and starts it. To keep Screen Recording permission across rebuilds, create a code signing certificate in Keychain Access (Certificate Assistant > Create a Certificate, type Code Signing) and set `ANNOTATE_SIGN_IDENTITY` to its name. Without it, `bundle.sh` signs ad-hoc.
+On macOS you also need the Xcode command line tools (`xcode-select --install`). `scripts/bundle.sh install` builds `Annotate.app`, moves it to /Applications and starts it. To keep Screen Recording permission across rebuilds, create a code signing certificate in Keychain Access (Certificate Assistant > Create a Certificate, type Code Signing) and set `ANNOTATE_SIGN_IDENTITY` to its name for the first install. Without it, `bundle.sh` signs ad-hoc. Later builds sign with the installed app's certificate and ignore the variable, so to switch certificates, delete `/Applications/Annotate.app` first.
 
 On Windows you need the MSVC toolchain, which the Rust installer offers to set up. Run `cargo build --release` and take `target\release\annotate.exe`.
 
