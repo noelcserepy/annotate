@@ -4,9 +4,7 @@
 #   scripts/bundle.sh install    and move it to /Applications and launch it, so only one copy carries the bundle ID
 #   scripts/bundle.sh universal  for arm64 and x86_64, as the release ships it
 # Signs with the certificate of the app installed in /Applications, because macOS ties the
-# Screen Recording grant to it. With no certificate-signed app installed, signs with the
-# identity named in ANNOTATE_SIGN_IDENTITY, else ad-hoc. To switch certificates, delete
-# /Applications/Annotate.app first.
+# Screen Recording grant to it.
 set -e
 cd "$(dirname "$0")/.."
 if [ "$1" = "universal" ]; then
@@ -22,6 +20,7 @@ else
     BUILD=target/release/build
 fi
 APP=target/Annotate.app
+INSTALLED=/Applications/Annotate.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/annotate"
@@ -29,13 +28,13 @@ cp "$BIN" "$APP/Contents/MacOS/annotate"
 cp "$(ls -t "$BUILD"/annotate-*/out/AppIcon.icns | head -1)" "$APP/Contents/Resources/AppIcon.icns"
 cp Info.plist "$APP/Contents/Info.plist"
 # An ad-hoc signature has no certificate leaf, so it falls through to the variable.
-leaf=$(codesign -d -r- /Applications/Annotate.app 2>/dev/null | sed -n 's/.*certificate leaf = H"\([0-9a-f]*\)".*/\1/p')
+leaf=$(codesign -d -r- "$INSTALLED" 2>/dev/null | sed -n 's/.*certificate leaf = H"\([0-9a-f]*\)".*/\1/p')
 identity="${leaf:-${ANNOTATE_SIGN_IDENTITY:--}}"
 echo "Signing with $identity${leaf:+, the certificate of the installed app}. codesign may wait at a keychain dialog."
 codesign --force --sign "$identity" "$APP"
 if [ "$1" = "install" ]; then
     pkill -x annotate || true
-    rm -rf /Applications/Annotate.app
-    mv "$APP" /Applications/Annotate.app
-    open /Applications/Annotate.app
+    rm -rf "$INSTALLED"
+    mv "$APP" "$INSTALLED"
+    open "$INSTALLED"
 fi
